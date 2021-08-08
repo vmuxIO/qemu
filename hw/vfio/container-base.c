@@ -17,10 +17,11 @@
 
 int vfio_container_dma_map(VFIOContainerBase *bcontainer,
                            hwaddr iova, ram_addr_t size,
-                           void *vaddr, bool readonly)
+                           void *vaddr, bool readonly, MemoryRegion *mrp)
 {
     g_assert(bcontainer->ops->dma_map);
-    return bcontainer->ops->dma_map(bcontainer, iova, size, vaddr, readonly);
+    return bcontainer->ops->dma_map(bcontainer, iova, size, vaddr,
+                                    readonly, mrp);
 }
 
 int vfio_container_dma_unmap(VFIOContainerBase *bcontainer,
