@@ -56,34 +56,62 @@ static int vfio_user_query_dirty_bitmap(const VFIOContainerBase *bcontainer,
 
 static bool vfio_user_setup(VFIOContainerBase *bcontainer, Error **errp)
 {
-    error_setg_errno(errp, ENOTSUP, "Not supported");
-    return -ENOTSUP;
+    VFIOUserContainer *container = container_of(bcontainer, VFIOUserContainer,
+                                                bcontainer);
+
+    assert(container->proxy->dma_pgsizes != 0);
+    bcontainer->pgsizes = container->proxy->dma_pgsizes;
+    bcontainer->dma_max_mappings = container->proxy->max_dma;
+
+    /* No live migration support yet. */
+    bcontainer->dirty_pages_supported = false;
+    bcontainer->max_dirty_bitmap_size = container->proxy->max_bitmap;
+    bcontainer->dirty_pgsizes = container->proxy->migr_pgsize;
+
+    return true;
 }
 
 /*
  * Try to mirror vfio_connect_container() as much as possible.
  */
 static VFIOUserContainer *
-vfio_connect_user_container(AddressSpace *as, Error **errp)
+vfio_connect_user_container(AddressSpace *as, VFIODevice *vbasedev,
+                            Error **errp)
 {
-    VFIOAddressSpace *space;
-    VFIOUserContainer *container;
     VFIOContainerBase *bcontainer;
+    VFIOUserContainer *container;
+    const VFIOIOMMUClass *ops;
+    VFIOAddressSpace *space;
+    int ret;
 
     space = vfio_get_address_space(as);
 
     container = g_malloc0(sizeof(*container));
-
+    container->proxy = vbasedev->proxy;
     bcontainer = &container->bcontainer;
+
+    ops = VFIO_IOMMU_CLASS(object_class_by_name(TYPE_VFIO_IOMMU_USER));
+
+    vfio_container_init(&container->bcontainer, space, ops);
 
     if (!vfio_cpr_register_container(bcontainer, errp)) {
         goto free_container_exit;
     }
 
+    /*
+     * VFIO user allows the device server to map guest memory so it has the same
+     * issue with discards as a local IOMMU has.
+     */
+    ret = ram_block_uncoordinated_discard_disable(true);
+    if (ret) {
+        error_setg_errno(errp, -ret, "Cannot set discarding of RAM broken");
+        goto unregister_container_exit;
+    }
+
     assert(bcontainer->ops->setup);
 
     if (!bcontainer->ops->setup(bcontainer, errp)) {
-        goto unregister_container_exit;
+        goto enable_discards_exit;
     }
 
     QLIST_INSERT_HEAD(&space->containers, bcontainer, next);
@@ -109,6 +137,9 @@ listener_release_exit:
         bcontainer->ops->release(bcontainer);
     }
 
+enable_discards_exit:
+    ram_block_uncoordinated_discard_disable(false);
+
 unregister_container_exit:
     vfio_cpr_unregister_container(bcontainer);
 
@@ -123,13 +154,14 @@ free_container_exit:
 static void vfio_disconnect_user_container(VFIOUserContainer *container)
 {
     VFIOContainerBase *bcontainer = &container->bcontainer;
+    VFIOAddressSpace *space = bcontainer->space;
+
+    ram_block_uncoordinated_discard_disable(false);
 
     memory_listener_unregister(&bcontainer->listener);
     if (bcontainer->ops->release) {
         bcontainer->ops->release(bcontainer);
     }
-
-    VFIOAddressSpace *space = bcontainer->space;
 
     vfio_container_destroy(bcontainer);
 
@@ -166,7 +198,7 @@ static bool vfio_user_attach_device(const char *name, VFIODevice *vbasedev,
 {
     VFIOUserContainer *container;
 
-    container = vfio_connect_user_container(as, errp);
+    container = vfio_connect_user_container(as, vbasedev, errp);
     if (container == NULL) {
         error_prepend(errp, "failed to connect proxy");
         return false;

@@ -90,6 +90,7 @@ typedef struct VFIOContainer {
 /* MMU container sub-class for vfio-user. */
 typedef struct VFIOUserContainer {
     VFIOContainerBase bcontainer;
+    VFIOUserProxy *proxy;
 } VFIOUserContainer;
 
 typedef struct VFIOHostDMAWindow {
