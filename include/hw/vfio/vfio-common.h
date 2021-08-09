@@ -57,6 +57,7 @@ typedef struct VFIORegion {
     uint32_t nr_mmaps;
     VFIOMmap *mmaps;
     uint8_t nr; /* cache the region number for debug */
+    int fd; /* fd to mmap() region */
 } VFIORegion;
 
 typedef struct VFIOMigration {
@@ -126,6 +127,7 @@ typedef struct VFIODevice {
     bool ram_block_discard_allowed;
     OnOffAuto enable_migration;
     bool migration_events;
+    bool use_regfds;
     VFIODeviceOps *ops;
     VFIODeviceIO *io;
     unsigned int num_irqs;
@@ -140,6 +142,7 @@ typedef struct VFIODevice {
     IOMMUFDBackend *iommufd;
     VFIOUserProxy *proxy;
     struct vfio_region_info **regions;
+    int *regfds;
 } VFIODevice;
 
 struct VFIODeviceOps {
@@ -184,7 +187,7 @@ struct VFIODeviceOps {
 struct VFIODeviceIO {
     int (*device_feature)(VFIODevice *vdev, struct vfio_device_feature *);
     int (*get_region_info)(VFIODevice *vdev,
-                           struct vfio_region_info *info);
+                           struct vfio_region_info *info, int *fd);
     int (*get_irq_info)(VFIODevice *vdev, struct vfio_irq_info *irq);
     int (*set_irqs)(VFIODevice *vdev, struct vfio_irq_set *irqs);
     int (*region_read)(VFIODevice *vdev, uint8_t nr, off_t off, uint32_t size,
@@ -194,6 +197,7 @@ struct VFIODeviceIO {
 };
 
 extern VFIODeviceIO vfio_dev_io_ioctl;
+extern VFIODeviceIO vfio_dev_io_sock;
 
 #endif /* CONFIG_LINUX */
 

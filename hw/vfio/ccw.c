@@ -587,6 +587,8 @@ static void vfio_ccw_realize(DeviceState *dev, Error **errp)
         return;
     }
 
+    vbasedev->use_regfds = false;
+
     if (!vfio_attach_device(cdev->mdevid, vbasedev,
                             &address_space_memory, errp)) {
         goto out_attach_dev_err;
