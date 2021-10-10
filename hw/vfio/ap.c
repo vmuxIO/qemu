@@ -229,7 +229,7 @@ static void vfio_ap_instance_init(Object *obj)
      * handle ram_block_discard_disable().
      */
     vfio_device_init(vbasedev, VFIO_DEVICE_TYPE_AP, &vfio_ap_ops,
-                     DEVICE(vapdev), true);
+                     &vfio_dev_io_ioctl, DEVICE(vapdev), true);
 }
 
 #ifdef CONFIG_IOMMUFD
