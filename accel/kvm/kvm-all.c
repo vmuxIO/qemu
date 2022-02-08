@@ -168,6 +168,7 @@ bool kvm_vm_attributes_allowed;
 bool kvm_direct_msi_allowed;
 bool kvm_ioeventfd_any_length_allowed;
 bool kvm_msi_use_devid;
+bool kvm_ioregionfds_allowed;
 static bool kvm_immediate_exit;
 static hwaddr kvm_max_slot_size = ~0;
 
@@ -380,6 +381,18 @@ err:
                      " start=0x%" PRIx64 ", size=0x%" PRIx64 ": %s",
                      __func__, mem.slot, slot->start_addr,
                      (uint64_t)mem.memory_size, strerror(errno));
+    }
+    return ret;
+}
+
+int kvm_set_ioregionfd(struct kvm_ioregion *ioregionfd)
+{
+    KVMState *s = kvm_state;
+    int ret = -1;
+
+    ret = kvm_vm_ioctl(s, KVM_SET_IOREGION, ioregionfd);
+    if (ret < 0) {
+        error_report("Failed SET_IOREGION syscall ret is %d", ret);
     }
     return ret;
 }
@@ -1635,6 +1648,104 @@ static void kvm_io_ioeventfd_del(MemoryListener *listener,
     }
 }
 
+static void kvm_mem_ioregionfd_add(MemoryListener *listener,
+                                   MemoryRegionSection *section,
+                                   uint64_t data,
+                                   int fd)
+{
+
+    struct kvm_ioregion ioregionfd;
+    int r = -1;
+
+    ioregionfd.guest_paddr = section->offset_within_address_space;
+    ioregionfd.memory_size = int128_get64(section->size);
+    ioregionfd.user_data = data;
+    ioregionfd.read_fd = fd;
+    ioregionfd.write_fd = fd;
+    ioregionfd.flags = 0;
+    memset(&ioregionfd.pad, 0, sizeof(ioregionfd.pad));
+
+    r = kvm_set_ioregionfd(&ioregionfd);
+    if (r < 0) {
+        fprintf(stderr, "%s: error adding ioregionfd: %s (%d)\n,",
+                __func__, strerror(-r), -r);
+        abort();
+    }
+}
+
+static void kvm_mem_ioregionfd_del(MemoryListener *listener,
+                                   MemoryRegionSection *section,
+                                   uint64_t data,
+                                   int fd)
+
+{
+    struct kvm_ioregion ioregionfd;
+    int r = -1;
+
+    ioregionfd.guest_paddr = section->offset_within_address_space;
+    ioregionfd.memory_size = int128_get64(section->size);
+    ioregionfd.user_data = data;
+    ioregionfd.read_fd = fd;
+    ioregionfd.write_fd = fd;
+    ioregionfd.flags = KVM_IOREGION_DEASSIGN;
+    memset(&ioregionfd.pad, 0, sizeof(ioregionfd.pad));
+
+    r = kvm_set_ioregionfd(&ioregionfd);
+    if (r < 0) {
+        fprintf(stderr, "%s: error deleting ioregionfd: %s (%d)\n,",
+                __func__, strerror(-r), -r);
+        abort();
+    }
+}
+
+static void kvm_io_ioregionfd_add(MemoryListener *listener,
+                                  MemoryRegionSection *section,
+                                  uint64_t data,
+                                  int fd)
+{
+    struct kvm_ioregion ioregionfd;
+    int r = -1;
+
+    ioregionfd.guest_paddr = section->offset_within_address_space;
+    ioregionfd.memory_size = int128_get64(section->size);
+    ioregionfd.user_data = data;
+    ioregionfd.read_fd = fd;
+    ioregionfd.write_fd = fd;
+    ioregionfd.flags = KVM_IOREGION_PIO;
+    memset(&ioregionfd.pad, 0, sizeof(ioregionfd.pad));
+
+    r = kvm_set_ioregionfd(&ioregionfd);
+    if (r < 0) {
+        fprintf(stderr, "%s: error adding pio ioregionfd: %s (%d)\n,",
+                __func__, strerror(-r), -r);
+        abort();
+    }
+}
+
+static void kvm_io_ioregionfd_del(MemoryListener *listener,
+                                  MemoryRegionSection *section,
+                                  uint64_t data,
+                                  int fd)
+{
+    struct kvm_ioregion ioregionfd;
+    int r = -1;
+
+    ioregionfd.guest_paddr = section->offset_within_address_space;
+    ioregionfd.memory_size = int128_get64(section->size);
+    ioregionfd.user_data = data;
+    ioregionfd.read_fd = fd;
+    ioregionfd.write_fd = fd;
+    ioregionfd.flags = KVM_IOREGION_DEASSIGN | KVM_IOREGION_PIO;
+    memset(&ioregionfd.pad, 0, sizeof(ioregionfd.pad));
+
+    r = kvm_set_ioregionfd(&ioregionfd);
+    if (r < 0) {
+        fprintf(stderr, "%s: error deleting pio ioregionfd: %s (%d)\n,",
+                __func__, strerror(-r), -r);
+        abort();
+    }
+}
+
 void kvm_memory_listener_register(KVMState *s, KVMMemoryListener *kml,
                                   AddressSpace *as, int as_id, const char *name)
 {
@@ -1676,6 +1787,12 @@ static MemoryListener kvm_io_listener = {
     .name = "kvm-io",
     .eventfd_add = kvm_io_ioeventfd_add,
     .eventfd_del = kvm_io_ioeventfd_del,
+    .priority = 10,
+};
+
+static MemoryListener kvm_ioregion_listener = {
+    .ioregionfd_add = kvm_io_ioregionfd_add,
+    .ioregionfd_del = kvm_io_ioregionfd_del,
     .priority = 10,
 };
 
@@ -2564,6 +2681,9 @@ static int kvm_init(MachineState *ms)
     kvm_ioeventfd_any_length_allowed =
         (kvm_check_extension(s, KVM_CAP_IOEVENTFD_ANY_LENGTH) > 0);
 
+    kvm_ioregionfds_allowed =
+        (kvm_check_extension(s, KVM_CAP_IOREGIONFD) > 0);
+
     kvm_state = s;
 
     ret = kvm_arch_init(ms, s);
@@ -2585,6 +2705,12 @@ static int kvm_init(MachineState *ms)
         s->memory_listener.listener.eventfd_add = kvm_mem_ioeventfd_add;
         s->memory_listener.listener.eventfd_del = kvm_mem_ioeventfd_del;
     }
+
+    if (kvm_ioregionfds_allowed) {
+        s->memory_listener.listener.ioregionfd_add = kvm_mem_ioregionfd_add;
+        s->memory_listener.listener.ioregionfd_del = kvm_mem_ioregionfd_del;
+    }
+
     s->memory_listener.listener.coalesced_io_add = kvm_coalesce_mmio_region;
     s->memory_listener.listener.coalesced_io_del = kvm_uncoalesce_mmio_region;
 
@@ -2594,6 +2720,12 @@ static int kvm_init(MachineState *ms)
         memory_listener_register(&kvm_io_listener,
                                  &address_space_io);
     }
+
+    if (kvm_ioregionfds_allowed) {
+        memory_listener_register(&kvm_ioregion_listener,
+                                 &address_space_io);
+    }
+
     memory_listener_register(&kvm_coalesced_pio_listener,
                              &address_space_io);
 

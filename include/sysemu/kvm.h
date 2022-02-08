@@ -46,6 +46,7 @@ extern bool kvm_readonly_mem_allowed;
 extern bool kvm_direct_msi_allowed;
 extern bool kvm_ioeventfd_any_length_allowed;
 extern bool kvm_msi_use_devid;
+extern bool kvm_ioregionfds_allowed;
 
 #define kvm_enabled()           (kvm_allowed)
 /**
@@ -167,6 +168,15 @@ extern bool kvm_msi_use_devid;
  */
 #define kvm_msi_devid_required() (kvm_msi_use_devid)
 
+/**
+ * kvm_ioregionfds_enabled:
+ *
+ * Returns: true if we can use ioregionfd to receive the MMIO/PIO
+ * dispatches from KVM (ie the kernel supports ioregionfd and we are running
+ * with a configuration where it is meaningful to use them).
+ */
+#define kvm_ioregionfds_enabled() (kvm_ioregionfds_allowed)
+
 #else
 
 #define kvm_enabled()           (0)
@@ -184,12 +194,14 @@ extern bool kvm_msi_use_devid;
 #define kvm_direct_msi_enabled() (false)
 #define kvm_ioeventfd_any_length_enabled() (false)
 #define kvm_msi_devid_required() (false)
+#define kvm_ioregionfds_enabled (false)
 
 #endif  /* CONFIG_KVM_IS_POSSIBLE */
 
 struct kvm_run;
 struct kvm_lapic_state;
 struct kvm_irq_routing_entry;
+struct kvm_ioregion;
 
 typedef struct KVMCapabilityInfo {
     const char *name;
@@ -548,4 +560,7 @@ bool kvm_cpu_check_are_resettable(void);
 bool kvm_arch_cpu_check_are_resettable(void);
 
 bool kvm_dirty_ring_enabled(void);
+
+int kvm_set_ioregionfd(struct kvm_ioregion *ioregionfd);
+
 #endif

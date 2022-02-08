@@ -712,6 +712,7 @@ void ram_discard_manager_unregister_listener(RamDiscardManager *rdm,
 
 typedef struct CoalescedMemoryRange CoalescedMemoryRange;
 typedef struct MemoryRegionIoeventfd MemoryRegionIoeventfd;
+typedef struct MemoryRegionIoregionfd MemoryRegionIoregionfd;
 
 /** MemoryRegion:
  *
@@ -756,6 +757,8 @@ struct MemoryRegion {
     const char *name;
     unsigned ioeventfd_nb;
     MemoryRegionIoeventfd *ioeventfds;
+    unsigned ioregionfd_nb;
+    MemoryRegionIoregionfd *ioregionfds;
     RamDiscardManager *rdm; /* Only for RAM */
 };
 
@@ -974,6 +977,38 @@ struct MemoryListener {
      */
     void (*eventfd_del)(MemoryListener *listener, MemoryRegionSection *section,
                         bool match_data, uint64_t data, EventNotifier *e);
+    /**
+     * @ioregionfd_add:
+     *
+     * Called during an address space update transaction,
+     * for a section of the address space that has had a new ioregionfd
+     * registration since the last transaction.
+     *
+     * @listener: The #MemoryListener.
+     * @section: The new #MemoryRegionSection.
+     * @data: The @data parameter for the new ioregionfd.
+     * @fd: The file descriptor parameter for the new ioregionfd.
+     */
+    void (*ioregionfd_add)(MemoryListener *listener,
+                           MemoryRegionSection *section,
+                           uint64_t data, int fd);
+
+    /**
+     * @ioregionfd_del:
+     *
+     * Called during an address space update transaction,
+     * for a section of the address space that has dropped an ioregionfd
+     * registration since the last transaction.
+     *
+     * @listener: The #MemoryListener.
+     * @section: The new #MemoryRegionSection.
+     * @data: The @data parameter for the dropped ioregionfd.
+     * @fd: The file descriptor parameter for the dropped ioregionfd.
+     */
+    void (*ioregionfd_del)(MemoryListener *listener,
+                           MemoryRegionSection *section,
+                           uint64_t data, int fd);
+
 
     /**
      * @coalesced_io_add:
@@ -1041,6 +1076,8 @@ struct AddressSpace {
 
     int ioeventfd_nb;
     struct MemoryRegionIoeventfd *ioeventfds;
+    int ioregionfd_nb;
+    struct MemoryRegionIoregionfd *ioregionfds;
     QTAILQ_HEAD(, MemoryListener) listeners;
     QTAILQ_ENTRY(AddressSpace) address_spaces_link;
 };
@@ -2174,6 +2211,19 @@ void memory_region_del_eventfd(MemoryRegion *mr,
                                bool match_data,
                                uint64_t data,
                                EventNotifier *e);
+
+void memory_region_add_ioregionfd(MemoryRegion *mr,
+                                  hwaddr addr,
+                                  unsigned size,
+                                  uint64_t data,
+                                  int fd,
+                                  bool pio);
+
+void memory_region_del_ioregionfd(MemoryRegion *mr,
+                                  hwaddr addr,
+                                  unsigned size,
+                                  uint64_t data,
+                                  int fd);
 
 /**
  * memory_region_add_subregion: Add a subregion to a container.
