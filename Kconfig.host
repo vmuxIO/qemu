@@ -45,3 +45,6 @@ config MULTIPROCESS_ALLOWED
 config FUZZ
     bool
     select SPARSE_MEM
+
+config IOREGIONFD
+    bool

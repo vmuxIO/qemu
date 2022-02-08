@@ -2,3 +2,7 @@ config MULTIPROCESS
     bool
     depends on PCI && PCI_EXPRESS && KVM
     select REMOTE_PCIHOST
+config IOREGIONFD
+    bool
+    default n
+    depends on MULTIPROCESS

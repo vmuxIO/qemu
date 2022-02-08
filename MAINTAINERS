@@ -3454,6 +3454,8 @@ F: include/hw/remote/proxy-memory-listener.h
 F: hw/remote/iohub.c
 F: include/hw/remote/iohub.h
 F: include/hw/remote/remote.h
+F: include/hw/remote/ioregionfd.h
+F: hw/remote/ioregionfd.c
 
 EBPF:
 M: Jason Wang <jasowang@redhat.com>
