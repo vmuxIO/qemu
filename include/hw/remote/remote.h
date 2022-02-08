@@ -23,6 +23,7 @@ struct RemoteObject {
 
     DeviceState *dev;
     DeviceListener listener;
+    GHashTable *ioregionfd_hash;
 };
 
 #endif

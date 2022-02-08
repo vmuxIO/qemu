@@ -37,4 +37,5 @@ struct IORegionFDObject {
 
 typedef struct IORegionFDObject IORegionFDObject;
 
+GSList *ioregionfd_get_obj_list(void);
 #endif /* IOREGIONFD_H */

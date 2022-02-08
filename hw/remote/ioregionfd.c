@@ -37,6 +37,32 @@ struct IORegionFDObjectClass {
     unsigned int max_ioregfds;
 };
 
+static int ioregionfd_obj_list(Object *obj, void *opaque)
+{
+    GSList **list = opaque;
+
+    if (object_dynamic_cast(obj, TYPE_IOREGIONFD_OBJECT)) {
+        *list = g_slist_append(*list, obj);
+    }
+
+    object_child_foreach(obj, ioregionfd_obj_list, opaque);
+    return 0;
+}
+
+/*
+ * inquire ioregionfd objects and link them into the list which is
+ * returned to the caller.
+ *
+ * Caller must free the list.
+ */
+GSList *ioregionfd_get_obj_list(void)
+{
+    GSList *list = NULL;
+
+    object_child_foreach(object_get_root(), ioregionfd_obj_list, &list);
+    return list;
+}
+
 static void ioregionfd_object_init(Object *obj)
 {
     IORegionFDObjectClass *k = IOREGIONFD_OBJECT_GET_CLASS(obj);
