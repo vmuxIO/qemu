@@ -29,6 +29,7 @@ struct PCIProxyDev {
     PCIDevice parent_dev;
     char *fd;
 
+    char *ioregfd;
     /*
      * Mutex used to protect the QIOChannel fd from
      * the concurrent access by the VCPUs since proxy
