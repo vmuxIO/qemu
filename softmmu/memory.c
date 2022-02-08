@@ -40,6 +40,7 @@ static unsigned memory_region_transaction_depth;
 static bool memory_region_update_pending;
 static bool ioeventfd_update_pending;
 unsigned int global_dirty_tracking;
+static bool ioregionfd_update_pending;
 
 static QTAILQ_HEAD(, MemoryListener) memory_listeners
     = QTAILQ_HEAD_INITIALIZER(memory_listeners);
@@ -170,6 +171,13 @@ struct MemoryRegionIoeventfd {
     EventNotifier *e;
 };
 
+struct MemoryRegionIoregionfd {
+    AddrRange addr;
+    uint64_t data;
+    int fd;
+    bool pio;
+};
+
 static bool memory_region_ioeventfd_before(MemoryRegionIoeventfd *a,
                                            MemoryRegionIoeventfd *b)
 {
@@ -209,6 +217,33 @@ static bool memory_region_ioeventfd_equal(MemoryRegionIoeventfd *a,
           (a->match_data == b->match_data) &&
           ((a->match_data && (a->data == b->data)) || !a->match_data) &&
           (a->e == b->e))))
+        return true;
+
+    return false;
+}
+
+static bool memory_region_ioregionfd_before(MemoryRegionIoregionfd *a,
+                                           MemoryRegionIoregionfd *b)
+{
+    if (int128_lt(a->addr.start, b->addr.start)) {
+        return true;
+    } else if (int128_gt(a->addr.start, b->addr.start)) {
+        return false;
+    } else if (int128_lt(a->addr.size, b->addr.size)) {
+        return true;
+    } else if (int128_gt(a->addr.size, b->addr.size)) {
+        return false;
+    }
+    return false;
+}
+
+static bool memory_region_ioregionfd_equal(MemoryRegionIoregionfd *a,
+                                          MemoryRegionIoregionfd *b)
+{
+    if (int128_eq(a->addr.start, b->addr.start) &&
+        (!int128_nz(a->addr.size) || !int128_nz(b->addr.size) ||
+         (int128_eq(a->addr.size, b->addr.size) &&
+          (a->fd == b->fd))))
         return true;
 
     return false;
@@ -800,6 +835,52 @@ static void address_space_add_del_ioeventfds(AddressSpace *as,
     }
 }
 
+static void address_space_add_del_ioregionfds(AddressSpace *as,
+                                              MemoryRegionIoregionfd *fds_new,
+                                              unsigned fds_new_nb,
+                                              MemoryRegionIoregionfd *fds_old,
+                                              unsigned fds_old_nb)
+{
+    unsigned iold, inew;
+    MemoryRegionIoregionfd *fd;
+    MemoryRegionSection section;
+
+    iold = inew = 0;
+    while (iold < fds_old_nb || inew < fds_new_nb) {
+        if (iold < fds_old_nb
+            && (inew == fds_new_nb
+                || memory_region_ioregionfd_before(&fds_old[iold],
+                                                  &fds_new[inew]))) {
+            fd = &fds_old[iold];
+            section = (MemoryRegionSection) {
+                .fv = address_space_to_flatview(as),
+                .offset_within_address_space = int128_get64(fd->addr.start),
+                .size = fd->addr.size,
+            };
+            MEMORY_LISTENER_CALL(as, ioregionfd_del, Forward, &section,
+                                 fd->data, fd->fd);
+            ++iold;
+
+        } else if (inew < fds_new_nb
+                   && (iold == fds_old_nb
+                       || memory_region_ioregionfd_before(&fds_new[inew],
+                                                         &fds_old[iold]))) {
+            fd = &fds_new[inew];
+            section = (MemoryRegionSection) {
+                .fv = address_space_to_flatview(as),
+                .offset_within_address_space = int128_get64(fd->addr.start),
+                .size = fd->addr.size,
+            };
+            MEMORY_LISTENER_CALL(as, ioregionfd_add, Reverse, &section,
+                                 fd->data, fd->fd);
+            ++inew;
+        } else {
+            ++iold;
+            ++inew;
+        }
+    }
+}
+
 FlatView *address_space_get_flatview(AddressSpace *as)
 {
     FlatView *view;
@@ -812,6 +893,52 @@ FlatView *address_space_get_flatview(AddressSpace *as)
          */
     } while (!flatview_ref(view));
     return view;
+}
+
+static void address_space_update_ioregionfds(AddressSpace *as)
+{
+    FlatView *view;
+    FlatRange *fr;
+    unsigned ioregionfd_nb = 0;
+    unsigned ioregionfd_max;
+    MemoryRegionIoregionfd *ioregionfds;
+    AddrRange tmp;
+    unsigned i;
+
+    /*
+     * It is likely that the number of ioregionfds hasn't changed much, so use
+     * the previous size as the starting value, with some headroom to avoid
+     * gratuitous reallocations.
+     */
+    ioregionfd_max = QEMU_ALIGN_UP(as->ioregionfd_nb, 4);
+    ioregionfds = g_new(MemoryRegionIoregionfd, ioregionfd_max);
+
+    view = address_space_get_flatview(as);
+    FOR_EACH_FLAT_RANGE(fr, view) {
+        for (i = 0; i < fr->mr->ioregionfd_nb; ++i) {
+            tmp = addrrange_shift(fr->mr->ioregionfds[i].addr,
+                                  int128_sub(fr->addr.start,
+                                  int128_make64(fr->offset_in_region)));
+            if (addrrange_intersects(fr->addr, tmp)) {
+                ++ioregionfd_nb;
+                if (ioregionfd_nb > ioregionfd_max) {
+                    ioregionfd_max = MAX(ioregionfd_max * 2, 4);
+                    ioregionfds = g_realloc(ioregionfds,
+                            ioregionfd_max * sizeof(*ioregionfds));
+                }
+                ioregionfds[ioregionfd_nb - 1] = fr->mr->ioregionfds[i];
+                ioregionfds[ioregionfd_nb - 1].addr = tmp;
+            }
+        }
+    }
+
+    address_space_add_del_ioregionfds(as, ioregionfds, ioregionfd_nb,
+                                      as->ioregionfds, as->ioregionfd_nb);
+
+    g_free(as->ioregionfds);
+    as->ioregionfds = ioregionfds;
+    as->ioregionfd_nb = ioregionfd_nb;
+    flatview_unref(view);
 }
 
 static void address_space_update_ioeventfds(AddressSpace *as)
@@ -1102,15 +1229,22 @@ void memory_region_transaction_commit(void)
             QTAILQ_FOREACH(as, &address_spaces, address_spaces_link) {
                 address_space_set_flatview(as);
                 address_space_update_ioeventfds(as);
+                address_space_update_ioregionfds(as);
             }
             memory_region_update_pending = false;
             ioeventfd_update_pending = false;
+            ioregionfd_update_pending = false;
             MEMORY_LISTENER_CALL_GLOBAL(commit, Forward);
         } else if (ioeventfd_update_pending) {
             QTAILQ_FOREACH(as, &address_spaces, address_spaces_link) {
                 address_space_update_ioeventfds(as);
             }
             ioeventfd_update_pending = false;
+        } else if (ioregionfd_update_pending) {
+            QTAILQ_FOREACH(as, &address_spaces, address_spaces_link) {
+                address_space_update_ioregionfds(as);
+            }
+            ioregionfd_update_pending = false;
         }
    }
 }
@@ -1757,6 +1891,7 @@ static void memory_region_finalize(Object *obj)
     memory_region_clear_coalescing(mr);
     g_free((char *)mr->name);
     g_free(mr->ioeventfds);
+    g_free(mr->ioregionfds);
 }
 
 Object *memory_region_owner(MemoryRegion *mr)
@@ -2434,6 +2569,42 @@ void memory_region_clear_flush_coalesced(MemoryRegion *mr)
 
 static bool userspace_eventfd_warning;
 
+void memory_region_add_ioregionfd(MemoryRegion *mr,
+                                  hwaddr addr,
+                                  unsigned size,
+                                  uint64_t data,
+                                  int fd,
+                                  bool pio)
+{
+    MemoryRegionIoregionfd mriofd = {
+        .addr.start = int128_make64(addr),
+        .addr.size = int128_make64(size),
+        .data = data,
+        .fd = fd,
+    };
+    unsigned i;
+
+    if (kvm_enabled() && !kvm_ioregionfds_enabled()) {
+        error_report("KVM does not support KVM_CAP_IOREGIONFD");
+    }
+
+    memory_region_transaction_begin();
+    for (i = 0; i < mr->ioregionfd_nb; ++i) {
+        if (memory_region_ioregionfd_before(&mriofd, &mr->ioregionfds[i])) {
+            break;
+        }
+    }
+    ++mr->ioregionfd_nb;
+    mr->ioregionfds = g_realloc(mr->ioregionfds,
+                                sizeof(*mr->ioregionfds) * mr->ioregionfd_nb);
+    memmove(&mr->ioregionfds[i + 1], &mr->ioregionfds[i],
+            sizeof(*mr->ioregionfds) * (mr->ioregionfd_nb - 1 - i));
+    mr->ioregionfds[i] = mriofd;
+
+    memory_region_transaction_commit();
+    ioregionfd_update_pending = true;
+}
+
 void memory_region_add_eventfd(MemoryRegion *mr,
                                hwaddr addr,
                                unsigned size,
@@ -2509,6 +2680,38 @@ void memory_region_del_eventfd(MemoryRegion *mr,
                                   sizeof(*mr->ioeventfds)*mr->ioeventfd_nb + 1);
     ioeventfd_update_pending |= mr->enabled;
     memory_region_transaction_commit();
+}
+
+void memory_region_del_ioregionfd(MemoryRegion *mr,
+                                  hwaddr addr,
+                                  unsigned size,
+                                  uint64_t data,
+                                  int fd)
+{
+    MemoryRegionIoregionfd mriofd = {
+        .addr.start = int128_make64(addr),
+        .addr.size = int128_make64(size),
+        .data = data,
+        .fd = fd,
+    };
+    unsigned i;
+
+    memory_region_transaction_begin();
+    for (i = 0; i < mr->ioregionfd_nb; ++i) {
+        if (memory_region_ioregionfd_equal(&mriofd, &mr->ioregionfds[i])) {
+            break;
+        }
+    }
+    assert(i != mr->ioregionfd_nb);
+    memmove(&mr->ioregionfds[i], &mr->ioregionfds[i + 1],
+            sizeof(*mr->ioregionfds) * (mr->ioregionfd_nb - (i + 1)));
+    --mr->ioregionfd_nb;
+    mr->ioregionfds = g_realloc(mr->ioregionfds,
+                                sizeof(*mr->ioregionfds) *
+                                mr->ioregionfd_nb + 1);
+    memory_region_transaction_commit();
+
+    ioregionfd_update_pending = true;
 }
 
 static void memory_region_update_container_subregions(MemoryRegion *subregion)
@@ -2956,11 +3159,14 @@ void address_space_init(AddressSpace *as, MemoryRegion *root, const char *name)
     as->current_map = NULL;
     as->ioeventfd_nb = 0;
     as->ioeventfds = NULL;
+    as->ioregionfd_nb = 0;
+    as->ioregionfds = NULL;
     QTAILQ_INIT(&as->listeners);
     QTAILQ_INSERT_TAIL(&address_spaces, as, address_spaces_link);
     as->name = g_strdup(name ? name : "anonymous");
     address_space_update_topology(as);
     address_space_update_ioeventfds(as);
+    address_space_update_ioregionfds(as);
 }
 
 static void do_address_space_destroy(AddressSpace *as)
@@ -2970,6 +3176,7 @@ static void do_address_space_destroy(AddressSpace *as)
     flatview_unref(as->current_map);
     g_free(as->name);
     g_free(as->ioeventfds);
+    g_free(as->ioregionfds);
     memory_region_unref(as->root);
 }
 
