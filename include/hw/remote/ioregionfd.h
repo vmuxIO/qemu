@@ -38,4 +38,6 @@ struct IORegionFDObject {
 typedef struct IORegionFDObject IORegionFDObject;
 
 GSList *ioregionfd_get_obj_list(void);
+IORegionFD *ioregionfd_get_by_bar(GSList *list, uint32_t bar);
+void ioregionfd_set_bar_type(GSList *list, uint32_t bar, bool memory);
 #endif /* IOREGIONFD_H */

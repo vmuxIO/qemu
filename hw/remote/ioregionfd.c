@@ -63,6 +63,34 @@ GSList *ioregionfd_get_obj_list(void)
     return list;
 }
 
+IORegionFD *ioregionfd_get_by_bar(GSList *list, uint32_t bar)
+{
+    IORegionFDObject *ioregionfd;
+    GSList *elem;
+
+    for (elem = list; elem; elem = elem->next) {
+        ioregionfd = elem->data;
+
+        if (ioregionfd->ioregfd.bar == bar) {
+            return &ioregionfd->ioregfd;
+        }
+    }
+    return NULL;
+}
+
+void ioregionfd_set_bar_type(GSList *list, uint32_t bar, bool memory)
+{
+    IORegionFDObject *ioregionfd;
+    GSList *elem;
+
+    for (elem = list; elem; elem = elem->next) {
+        ioregionfd = elem->data;
+        if (ioregionfd->ioregfd.bar == bar) {
+            ioregionfd->ioregfd.memory = memory;
+        }
+    }
+}
+
 static void ioregionfd_object_init(Object *obj)
 {
     IORegionFDObjectClass *k = IOREGIONFD_OBJECT_GET_CLASS(obj);

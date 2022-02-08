@@ -28,6 +28,7 @@ struct RemoteMachineState {
 typedef struct RemoteCommDev {
     PCIDevice *dev;
     QIOChannel *ioc;
+    GSList *ioregions_list;
 } RemoteCommDev;
 
 #define TYPE_REMOTE_MACHINE "x-remote-machine"

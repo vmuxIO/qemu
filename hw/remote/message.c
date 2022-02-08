@@ -29,6 +29,8 @@ static void process_bar_write(QIOChannel *ioc, MPQemuMsg *msg, Error **errp);
 static void process_bar_read(QIOChannel *ioc, MPQemuMsg *msg, Error **errp);
 static void process_device_reset_msg(QIOChannel *ioc, PCIDevice *dev,
                                      Error **errp);
+static void process_device_get_reg_info(QIOChannel *ioc, RemoteCommDev *com,
+                                        MPQemuMsg *msg, Error **errp);
 
 void coroutine_fn mpqemu_remote_msg_loop_co(void *data)
 {
@@ -75,6 +77,9 @@ void coroutine_fn mpqemu_remote_msg_loop_co(void *data)
         case MPQEMU_CMD_DEVICE_RESET:
             process_device_reset_msg(com->ioc, pci_dev, &local_err);
             break;
+        case MPQEMU_CMD_BAR_INFO:
+            process_device_get_reg_info(com->ioc, com, &msg, &local_err);
+            break;
         default:
             error_setg(&local_err,
                        "Unknown command (%d) received for device %s"
@@ -88,6 +93,39 @@ void coroutine_fn mpqemu_remote_msg_loop_co(void *data)
         qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_ERROR);
     } else {
         qemu_system_shutdown_request(SHUTDOWN_CAUSE_GUEST_SHUTDOWN);
+    }
+}
+
+static void process_device_get_reg_info(QIOChannel *ioc, RemoteCommDev *com,
+                                        MPQemuMsg *msg, Error **errp)
+{
+    ERRP_GUARD();
+    uint32_t bar = (uint32_t)(msg->data.u64 & MAKE_64BIT_MASK(0, 32));
+    bool memory;
+
+    memory = (msg->data.u64 && MAKE_64BIT_MASK(32, 32)) == 1 ?  true : false;
+
+    IORegionFD *ioregfd;
+    MPQemuMsg ret = { 0 };
+
+    error_report("Bar is %d, mem %s", bar, memory ? "true" : "false");
+
+    memset(&ret, 0, sizeof(MPQemuMsg));
+    ret.cmd = MPQEMU_CMD_RET;
+    ret.size = sizeof(ret.data.u64);
+
+    ioregfd = ioregionfd_get_by_bar(com->ioregions_list, bar);
+    if (ioregfd) {
+        ret.data.u64 = ioregfd->bar;
+        if (ioregfd->memory != memory) {
+            ioregionfd_set_bar_type(com->ioregions_list, bar, memory);
+        }
+    } else {
+        ret.data.u64 = UINT64_MAX;
+    }
+    if (!mpqemu_msg_send(&ret, ioc, NULL)) {
+        error_prepend(errp, "Error returning code to proxy, pid "FMT_pid": ",
+                      getpid());
     }
 }
 
