@@ -23,6 +23,7 @@
 #include "hw/pci/pci.h"
 #include "qemu/sockets.h"
 #include "monitor/monitor.h"
+#include "hw/remote/remote.h"
 
 #define TYPE_REMOTE_OBJECT "x-remote-object"
 OBJECT_DECLARE_TYPE(RemoteObject, RemoteObjectClass, REMOTE_OBJECT)
@@ -32,21 +33,6 @@ struct RemoteObjectClass {
 
     unsigned int nr_devs;
     unsigned int max_devs;
-};
-
-struct RemoteObject {
-    /* private */
-    Object parent;
-
-    Notifier machine_done;
-
-    int32_t fd;
-    char *devid;
-
-    QIOChannel *ioc;
-
-    DeviceState *dev;
-    DeviceListener listener;
 };
 
 static void remote_object_set_fd(Object *obj, const char *str, Error **errp)
