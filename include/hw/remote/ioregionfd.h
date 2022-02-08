@@ -40,4 +40,6 @@ typedef struct IORegionFDObject IORegionFDObject;
 GSList *ioregionfd_get_obj_list(void);
 IORegionFD *ioregionfd_get_by_bar(GSList *list, uint32_t bar);
 void ioregionfd_set_bar_type(GSList *list, uint32_t bar, bool memory);
+int qio_channel_ioregionfd_read(QIOChannel *ioc, gpointer opaque,
+                                Error **errp);
 #endif /* IOREGIONFD_H */

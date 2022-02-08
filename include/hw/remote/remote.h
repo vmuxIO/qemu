@@ -23,6 +23,8 @@ struct RemoteObject {
 
     DeviceState *dev;
     DeviceListener listener;
+    QIOChannel *ioregfd_ioc;
+    AioContext *ioregfd_ctx;
     GHashTable *ioregionfd_hash;
 };
 

@@ -26,6 +26,7 @@
 #include "hw/pci/pci.h"
 #include "qapi/qapi-visit-qom.h"
 #include "hw/remote/remote.h"
+#include "ioregionfd.h"
 
 #define TYPE_IOREGIONFD_OBJECT "ioregionfd-object"
 OBJECT_DECLARE_TYPE(IORegionFDObject, IORegionFDObjectClass, IOREGIONFD_OBJECT)
@@ -89,6 +90,116 @@ void ioregionfd_set_bar_type(GSList *list, uint32_t bar, bool memory)
             ioregionfd->ioregfd.memory = memory;
         }
     }
+}
+
+int qio_channel_ioregionfd_read(QIOChannel *ioc, gpointer opaque,
+                                Error **errp)
+{
+    struct RemoteObject *o = (struct RemoteObject *)opaque;
+    struct ioregionfd_cmd cmd = {};
+    struct iovec iov = {
+        .iov_base = &cmd,
+        .iov_len = sizeof(struct ioregionfd_cmd),
+    };
+    IORegionFDObject *ioregfd_obj;
+    PCIDevice *pci_dev;
+    hwaddr addr;
+    struct ioregionfd_resp resp = {};
+    int bar = 0;
+    Error *local_err = NULL;
+    uint64_t val = UINT64_MAX;
+    AddressSpace *as;
+    int ret = -EINVAL;
+
+    ERRP_GUARD();
+
+    if (!ioc) {
+        return -EINVAL;
+    }
+    ret = qio_channel_readv_full(ioc, &iov, 1, NULL, 0, &local_err);
+
+    if (ret == QIO_CHANNEL_ERR_BLOCK) {
+        return -EINVAL;
+    }
+
+    if (ret <= 0) {
+        /* read error or other side closed connection */
+        if (local_err) {
+            error_report_err(local_err);
+        }
+        error_setg(errp, "ioregionfd receive error");
+        return -EINVAL;
+    }
+
+    bar = cmd.user_data;
+    pci_dev = PCI_DEVICE(o->dev);
+    addr = (hwaddr)(pci_get_bar_addr(pci_dev, bar) + cmd.offset);
+    IORegionFDObject key = {.ioregfd = {.bar = bar} };
+    ioregfd_obj = g_hash_table_lookup(o->ioregionfd_hash, &key);
+
+    if (!ioregfd_obj) {
+        error_setg(errp, "Could not find IORegionFDObject");
+        return -EINVAL;
+    }
+    if (ioregfd_obj->ioregfd.memory) {
+        as = &address_space_memory;
+    } else {
+        as = &address_space_io;
+    }
+
+    if (ret > 0 && pci_dev) {
+        switch (cmd.cmd) {
+        case IOREGIONFD_CMD_READ:
+            ret = address_space_rw(as, addr, MEMTXATTRS_UNSPECIFIED,
+                                   (void *)&val, 1 << cmd.size_exponent,
+                                   false);
+            if (ret != MEMTX_OK) {
+                ret = -EINVAL;
+                error_setg(errp, "Bad address %"PRIx64" in mem read", addr);
+                val = UINT64_MAX;
+            }
+
+            memset(&resp, 0, sizeof(resp));
+            resp.data = val;
+            if (qio_channel_write_all(ioc, (char *)&resp, sizeof(resp),
+                                      &local_err)) {
+                error_propagate(errp, local_err);
+                goto fatal;
+            }
+            break;
+        case IOREGIONFD_CMD_WRITE:
+            ret = address_space_rw(as, addr, MEMTXATTRS_UNSPECIFIED,
+                                   (void *)&cmd.data, 1 << cmd.size_exponent,
+                                   true);
+            if (ret != MEMTX_OK) {
+                error_setg(errp, "Bad address %"PRIx64" for mem write", addr);
+                val = UINT64_MAX;
+            }
+
+            if (cmd.resp) {
+                memset(&resp, 0, sizeof(resp));
+                if (ret != MEMTX_OK) {
+                    resp.data = UINT64_MAX;
+                    ret = -EINVAL;
+                } else {
+                    resp.data = cmd.data;
+                }
+                if (qio_channel_write_all(ioc, (char *)&resp, sizeof(resp),
+                                          &local_err)) {
+                    error_propagate(errp, local_err);
+                    goto fatal;
+                }
+            }
+            break;
+        default:
+            error_setg(errp, "Unknown ioregionfd command from kvm");
+            break;
+        }
+    }
+    return ret;
+
+ fatal:
+    return -EINVAL;
 }
 
 static void ioregionfd_object_init(Object *obj)

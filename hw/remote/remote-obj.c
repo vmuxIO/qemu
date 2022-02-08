@@ -11,6 +11,7 @@
 #include "qemu-common.h"
 
 #include "qemu/error-report.h"
+#include "sysemu/iothread.h"
 #include "qemu/notify.h"
 #include "qom/object_interfaces.h"
 #include "hw/qdev-core.h"
@@ -78,6 +79,16 @@ static void remote_object_unrealize_listener(DeviceListener *listener,
     }
 }
 
+static IOThread *ioregionfd_iot;
+
+static void ioregion_read(void *opaque)
+{
+    struct RemoteObject *o = opaque;
+    Error *local_error = NULL;
+
+    qio_channel_ioregionfd_read(o->ioregfd_ioc, opaque, &local_error);
+}
+
 static GSList *ioregions_list;
 
 static unsigned int ioregionfd_bar_hash(const void *key)
@@ -104,6 +115,8 @@ static void ioregionfd_prepare_for_dev(RemoteObject *o, PCIDevice *dev)
 {
     IORegionFDObject *ioregfd_obj = NULL;
     GSList *obj_list, *list;
+    QIOChannel *ioc = NULL;
+    Error *local_err = NULL;
 
     list = ioregionfd_get_obj_list();
 
@@ -142,6 +155,30 @@ static void ioregionfd_prepare_for_dev(RemoteObject *o, PCIDevice *dev)
 
     /* This is default and will be changed when proxy requests region info. */
     ioregfd_obj->ioregfd.memory = true;
+
+    ioc = qio_channel_new_fd(ioregfd_obj->ioregfd.fd, &local_err);
+    if (!ioc) {
+        error_prepend(&local_err, "Could not create IOC channel for" \
+                      "ioregionfd fd %d", ioregfd_obj->ioregfd.fd);
+        error_report_err(local_err);
+        goto fatal;
+    }
+    o->ioregfd_ioc = ioc;
+
+    if (ioregionfd_iot == NULL) {
+        ioregionfd_iot = iothread_create("ioregionfd iothread",
+                                       &local_err);
+        if (local_err) {
+            qio_channel_shutdown(o->ioregfd_ioc, QIO_CHANNEL_SHUTDOWN_BOTH,
+                                 NULL);
+            qio_channel_close(o->ioregfd_ioc, NULL);
+            error_report_err(local_err);
+            goto fatal;
+        }
+    }
+    o->ioregfd_ctx = iothread_get_aio_context(ioregionfd_iot);
+    qio_channel_set_aio_fd_handler(o->ioregfd_ioc, o->ioregfd_ctx,
+                                   ioregion_read, NULL, o);
 
     ioregions_list = list;
     return;
@@ -238,8 +275,15 @@ static void remote_object_finalize(Object *obj)
 
     k->nr_devs--;
     g_free(o->devid);
+
+    iothread_destroy(ioregionfd_iot);
     /* Free the list of the ioregions. */
     g_slist_foreach(ioregions_list, ioregionfd_release, NULL);
+    if (o->ioregfd_ioc) {
+        qio_channel_shutdown(o->ioregfd_ioc, QIO_CHANNEL_SHUTDOWN_BOTH, NULL);
+        qio_channel_close(o->ioregfd_ioc, NULL);
+    }
+
     g_slist_free(ioregions_list);
     g_hash_table_destroy(o->ioregionfd_hash);
 }
