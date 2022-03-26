@@ -168,6 +168,7 @@ bool kvm_vm_attributes_allowed;
 bool kvm_direct_msi_allowed;
 bool kvm_ioeventfd_any_length_allowed;
 bool kvm_msi_use_devid;
+bool kvm_ioregionfds_allowed;
 static bool kvm_immediate_exit;
 static hwaddr kvm_max_slot_size = ~0;
 

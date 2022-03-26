@@ -30,6 +30,7 @@ bool kvm_allowed;
 bool kvm_readonly_mem_allowed;
 bool kvm_ioeventfd_any_length_allowed;
 bool kvm_msi_use_devid;
+bool kvm_ioregionfds_allowed;
 
 void kvm_flush_coalesced_mmio_buffer(void)
 {
