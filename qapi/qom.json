@@ -690,6 +690,29 @@
                   '*log': 'str' } }
 
 ##
+# @IORegionFDObjectProperties:
+#
+# Describes ioregionfd for the device
+#
+# @devid: the id of the device to be associated with the ioregionfd
+#
+# @iofd: File descriptor
+#
+# @bar: BAR number to use with ioregionfd
+#
+# @start: offset from the BAR start address of ioregionfd
+#
+# @size: size of the ioregionfd
+##
+# Since: 2.9
+{ 'struct': 'IORegionFDObjectProperties',
+  'data': { 'devid': 'str',
+            'iofd': 'str',
+            'bar': 'int',
+            '*start': 'int',
+            '*size':'int' } }
+
+##
 # @RemoteObjectProperties:
 #
 # Properties for x-remote-object objects.
@@ -842,7 +865,9 @@
     'tls-creds-psk',
     'tls-creds-x509',
     'tls-cipher-suites',
-    { 'name': 'x-remote-object', 'features': [ 'unstable' ] }
+    { 'name': 'x-remote-object', 'features': [ 'unstable' ] },
+    { 'name':'ioregionfd-object',
+      'if': 'CONFIG_IOREGIONFD' }
   ] }
 
 ##
@@ -905,7 +930,8 @@
       'tls-creds-psk':              'TlsCredsPskProperties',
       'tls-creds-x509':             'TlsCredsX509Properties',
       'tls-cipher-suites':          'TlsCredsProperties',
-      'x-remote-object':            'RemoteObjectProperties'
+      'x-remote-object':            'RemoteObjectProperties',
+      'ioregionfd-object':          'IORegionFDObjectProperties'
   } }
 
 ##
