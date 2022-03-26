@@ -384,6 +384,18 @@ err:
     return ret;
 }
 
+int kvm_set_ioregionfd(struct kvm_ioregion *ioregionfd)
+{
+    KVMState *s = kvm_state;
+    int ret = -1;
+
+    ret = kvm_vm_ioctl(s, KVM_SET_IOREGION, ioregionfd);
+    if (ret < 0) {
+        error_report("Failed SET_IOREGION syscall ret is %d", ret);
+    }
+    return ret;
+}
+
 static int do_kvm_destroy_vcpu(CPUState *cpu)
 {
     KVMState *s = kvm_state;

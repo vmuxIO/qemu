@@ -776,6 +776,29 @@ struct kvm_ioeventfd {
 	__u8  pad[36];
 };
 
+enum {
+    kvm_ioregion_flag_nr_pio,
+    kvm_ioregion_flag_nr_posted_writes,
+    kvm_ioregion_flag_nr_deassign,
+    kvm_ioregion_flag_nr_max,
+};
+
+#define KVM_IOREGION_PIO (1 << kvm_ioregion_flag_nr_pio)
+#define KVM_IOREGION_POSTED_WRITES (1 << kvm_ioregion_flag_nr_posted_writes)
+#define KVM_IOREGION_DEASSIGN (1 << kvm_ioregion_flag_nr_deassign)
+
+#define KVM_IOREGION_VALID_MASK_FLAG ((1 << kvm_ioregion_flag_nr_max) - 1)
+
+struct kvm_ioregion {
+    __u64 guest_paddr; /* guest physical address */
+    __u64 memory_size; /* bytes */
+    __u64 user_data;
+    __s32 read_fd;
+    __s32 write_fd;
+    __u32 flags;
+    __u8  pad[28];
+};
+
 #define KVM_X86_DISABLE_EXITS_MWAIT          (1 << 0)
 #define KVM_X86_DISABLE_EXITS_HLT            (1 << 1)
 #define KVM_X86_DISABLE_EXITS_PAUSE          (1 << 2)
@@ -933,6 +956,7 @@ struct kvm_ppc_resize_hpt {
 #define KVM_CAP_PIT_STATE2 35
 #endif
 #define KVM_CAP_IOEVENTFD 36
+#define KVM_CAP_IOREGIONFD 206
 #define KVM_CAP_SET_IDENTITY_MAP_ADDR 37
 #ifdef __KVM_HAVE_XEN_HVM
 #define KVM_CAP_XEN_HVM 38
@@ -1372,6 +1396,7 @@ struct kvm_vfio_spapr_tce {
 					struct kvm_userspace_memory_region)
 #define KVM_SET_TSS_ADDR          _IO(KVMIO,   0x47)
 #define KVM_SET_IDENTITY_MAP_ADDR _IOW(KVMIO,  0x48, __u64)
+#define KVM_SET_IOREGION          _IOW(KVMIO,  0x49, struct kvm_ioregion)
 
 /* enable ucontrol for s390 */
 struct kvm_s390_ucas_mapping {

@@ -190,6 +190,7 @@ extern bool kvm_msi_use_devid;
 struct kvm_run;
 struct kvm_lapic_state;
 struct kvm_irq_routing_entry;
+struct kvm_ioregion;
 
 typedef struct KVMCapabilityInfo {
     const char *name;
@@ -548,4 +549,7 @@ bool kvm_cpu_check_are_resettable(void);
 bool kvm_arch_cpu_check_are_resettable(void);
 
 bool kvm_dirty_ring_enabled(void);
+
+int kvm_set_ioregionfd(struct kvm_ioregion *ioregionfd);
+
 #endif
