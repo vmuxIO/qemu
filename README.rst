@@ -1,3 +1,7 @@
+This branch is just for my manual reimplementation of the ioregionfd
+implementation for the remote device in Qemu, for better understanding of
+Qemu's IO emulation as well as the feature.
+
 ===========
 QEMU README
 ===========
