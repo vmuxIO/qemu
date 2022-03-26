@@ -46,6 +46,7 @@ meson_options_help() {
   printf "%s\n" '  hax             HAX acceleration support'
   printf "%s\n" '  hvf             HVF acceleration support'
   printf "%s\n" '  iconv           Font glyph conversion support'
+  printf "%s\n" '  ioregionfd      Fast-path IO/MMIO support'
   printf "%s\n" '  jack            JACK sound support'
   printf "%s\n" '  kvm             KVM acceleration support'
   printf "%s\n" '  l2tpv3          l2tpv3 network backend support'
@@ -98,6 +99,7 @@ meson_options_help() {
   printf "%s\n" '                  Xen PCI passthrough support'
   printf "%s\n" '  xkbcommon       xkbcommon support'
   printf "%s\n" '  zstd            zstd compression support'
+  printf "%s\n" '  ioregionfd      ioregionfd support'
 }
 _meson_option_parse() {
   case $1 in
@@ -163,6 +165,8 @@ _meson_option_parse() {
     --disable-iconv) printf "%s" -Diconv=disabled ;;
     --enable-install-blobs) printf "%s" -Dinstall_blobs=true ;;
     --disable-install-blobs) printf "%s" -Dinstall_blobs=false ;;
+    --enable-ioregionfd) printf "%s" -Dioregionfd=enabled ;;
+    --disable-ioregionfd) printf "%s" -Dioregionfd=disabled ;;
     --enable-jack) printf "%s" -Djack=enabled ;;
     --disable-jack) printf "%s" -Djack=disabled ;;
     --enable-kvm) printf "%s" -Dkvm=enabled ;;
@@ -268,6 +272,8 @@ _meson_option_parse() {
     --disable-xen-pci-passthrough) printf "%s" -Dxen_pci_passthrough=disabled ;;
     --enable-xkbcommon) printf "%s" -Dxkbcommon=enabled ;;
     --disable-xkbcommon) printf "%s" -Dxkbcommon=disabled ;;
+    --enable-ioregionfd) printf "%s" -Dioregionfd=enabled ;;
+    --disable-ioregionfd) printf "%s" -Dioregionfd=disabled ;;
     --enable-zstd) printf "%s" -Dzstd=enabled ;;
     --disable-zstd) printf "%s" -Dzstd=disabled ;;
     *) return 1 ;;

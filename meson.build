@@ -258,6 +258,17 @@ if targetos != 'linux' and get_option('multiprocess').enabled()
 endif
 multiprocess_allowed = targetos == 'linux' and not get_option('multiprocess').disabled()
 
+# TODO: drop this limitation
+if not multiprocess_allowed and not get_option('ioregionfd').disabled()
+  error('To enable ioregionfd support, enable multiprocess option.')
+endif
+ioregionfd_allowed = multiprocess_allowed and not get_option('ioregionfd').disabled()
+if ioregionfd_allowed
+  config_host += { 'CONFIG_IOREGIONFD': 'y' }
+else
+  config_host += { 'CONFIG_IOREGIONFD': 'n' }
+endif
+
 libm = cc.find_library('m', required: false)
 threads = dependency('threads')
 util = cc.find_library('util', required: false)
@@ -1837,7 +1848,8 @@ host_kconfig = \
   (have_virtfs ? ['CONFIG_VIRTFS=y'] : []) + \
   ('CONFIG_LINUX' in config_host ? ['CONFIG_LINUX=y'] : []) + \
   ('CONFIG_PVRDMA' in config_host ? ['CONFIG_PVRDMA=y'] : []) + \
-  (multiprocess_allowed ? ['CONFIG_MULTIPROCESS_ALLOWED=y'] : [])
+  (multiprocess_allowed ? ['CONFIG_MULTIPROCESS_ALLOWED=y'] : []) + \
+  (ioregionfd_allowed ? ['CONFIG_IOREGIONFD=y'] : [])
 
 ignored = [ 'TARGET_XML_FILES', 'TARGET_ABI_DIR', 'TARGET_ARCH' ]
 
@@ -3315,6 +3327,7 @@ summary_info += {'target list':       ' '.join(target_dirs)}
 if have_system
   summary_info += {'default devices':   get_option('default_devices')}
   summary_info += {'out of process emulation': multiprocess_allowed}
+  summary_info += {'ioregionfd support': ioregionfd_allowed}
 endif
 summary(summary_info, bool_yn: true, section: 'Targets and accelerators')
 
