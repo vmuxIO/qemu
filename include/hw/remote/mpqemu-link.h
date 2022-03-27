@@ -17,6 +17,7 @@
 #include "exec/hwaddr.h"
 #include "io/channel-socket.h"
 #include "hw/remote/proxy.h"
+#include "hw/remote/ioregionfd.h"
 
 #define REMOTE_MAX_FDS 8
 
@@ -41,6 +42,7 @@ typedef enum {
     MPQEMU_CMD_BAR_READ,
     MPQEMU_CMD_SET_IRQFD,
     MPQEMU_CMD_DEVICE_RESET,
+    MPQEMU_CMD_BAR_INFO,
     MPQEMU_CMD_MAX,
 } MPQemuCmd;
 
