@@ -11,6 +11,7 @@
 #include "qemu-common.h"
 
 #include "qemu/error-report.h"
+#include "sysemu/iothread.h"
 #include "qemu/notify.h"
 #include "qom/object_interfaces.h"
 #include "hw/qdev-core.h"
@@ -24,6 +25,10 @@
 #include "qemu/sockets.h"
 #include "monitor/monitor.h"
 #include "hw/remote/remote.h"
+#include "hw/remote/ioregionfd.h"
+#include "qemu/cutils.h"
+#include "qapi/qapi-visit-qom.h"
+#include "qapi/string-output-visitor.h"
 
 #define TYPE_REMOTE_OBJECT "x-remote-object"
 OBJECT_DECLARE_TYPE(RemoteObject, RemoteObjectClass, REMOTE_OBJECT)
@@ -74,6 +79,116 @@ static void remote_object_unrealize_listener(DeviceListener *listener,
     }
 }
 
+static IOThread *ioregionfd_iot;
+
+static void ioregion_read(void *opaque)
+{
+    struct RemoteObject *o = opaque;
+    Error *local_error = NULL;
+
+    qio_channel_ioregionfd_read(o->ioregfd_ioc, opaque, &local_error);
+}
+
+static GSList *ioregions_list;
+
+static unsigned int ioregionfd_bar_hash(const void *key)
+{
+    const IORegionFDObject *o = key;
+
+    return g_int_hash(&o->ioregfd.bar);
+}
+
+/* TODO: allow for multiple ioregionfds per BAR. */
+static gboolean ioregionfd_bar_equal(const void *a, const void *b)
+{
+    const IORegionFDObject *oa = a;
+    const IORegionFDObject *ob = b;
+
+    error_report("BARS comparing %d %d", oa->ioregfd.bar, ob->ioregfd.bar);
+    if (oa->ioregfd.bar == ob->ioregfd.bar) {
+        return TRUE;
+    }
+    return FALSE;
+}
+
+static void ioregionfd_prepare_for_dev(RemoteObject *o, PCIDevice *dev)
+{
+    IORegionFDObject *ioregfd_obj = NULL;
+    GSList *obj_list, *list;
+    QIOChannel *ioc = NULL;
+    Error *local_err = NULL;
+
+    list = ioregionfd_get_obj_list();
+
+    o->ioregionfd_hash = g_hash_table_new(ioregionfd_bar_hash,
+                                       ioregionfd_bar_equal);
+
+    for (obj_list = list; obj_list; obj_list = obj_list->next) {
+        ioregfd_obj = obj_list->data;
+        if (strcmp(ioregfd_obj->ioregfd.devid, o->devid) != 0) {
+            list = g_slist_remove(list, ioregfd_obj);
+            error_report("No my dev remove");
+            continue;
+        }
+        if (!g_hash_table_add(o->ioregionfd_hash, ioregfd_obj)) {
+            error_report("Cannot use more than one ioregionfd per bar");
+            list = g_slist_remove(list, ioregfd_obj);
+            object_unparent(OBJECT(ioregfd_obj));
+        } else {
+            error_report("Added to hash");
+        }
+    }
+
+    if (!list) {
+        error_report("Remote device %s will not have ioregionfds.",
+                     o->devid);
+        goto fatal;
+    }
+
+    /*
+     * Take first element in the list of ioregions and use its fd
+     * for all regionfds for this device.
+     * TODO: make this more flexible and allow different fd for the
+     * device.
+     */
+    ioregfd_obj = list->data;
+ 
+    /* This is default and will be changed when proxy requests region info. */
+    ioregfd_obj->ioregfd.memory = true;
+
+    ioc = qio_channel_new_fd(ioregfd_obj->ioregfd.fd, &local_err);
+    if (!ioc) {
+        error_prepend(&local_err, "Could not create IOC channel for" \
+                      "ioregionfd fd %d", ioregfd_obj->ioregfd.fd);
+        error_report_err(local_err);
+        goto fatal;
+    }
+    o->ioregfd_ioc = ioc;
+
+    if (ioregionfd_iot == NULL) {
+        ioregionfd_iot = iothread_create("ioregionfd iothread",
+                                         &local_err);
+        if (local_err) {
+            qio_channel_shutdown(o->ioregfd_ioc, QIO_CHANNEL_SHUTDOWN_BOTH,
+                                 NULL);
+            qio_channel_close(o->ioregfd_ioc, NULL);
+            error_report_err(local_err);
+            goto fatal;
+        }
+    }
+    o->ioregfd_ctx = iothread_get_aio_context(ioregionfd_iot);
+    qio_channel_set_aio_fd_handler(o->ioregfd_ioc, o->ioregfd_ctx,
+                                   ioregion_read, NULL, o);
+
+    ioregions_list = list;
+    return;
+
+fatal:
+    g_slist_free(list);
+    g_hash_table_destroy(o->ioregionfd_hash);
+    return;
+}
+
 static void remote_object_machine_done(Notifier *notifier, void *data)
 {
     RemoteObject *o = container_of(notifier, RemoteObject, machine_done);
@@ -97,6 +212,10 @@ static void remote_object_machine_done(Notifier *notifier, void *data)
     qio_channel_set_blocking(ioc, false, NULL);
 
     o->dev = dev;
+
+#if CONFIG_IOREGIONFD
+    ioregionfd_prepare_for_dev(o, PCI_DEVICE(dev));
+#endif
 
     o->listener.unrealize = remote_object_unrealize_listener;
     device_listener_register(&o->listener);
@@ -133,6 +252,13 @@ static void remote_object_init(Object *obj)
     qemu_add_machine_init_done_notifier(&o->machine_done);
 }
 
+static void ioregionfd_release(gpointer data, gpointer user_data)
+{
+    IORegionFDObject *o = data;
+
+    object_unparent(OBJECT(o));
+}
+
 static void remote_object_finalize(Object *obj)
 {
     RemoteObjectClass *k = REMOTE_OBJECT_GET_CLASS(obj);
@@ -149,6 +275,17 @@ static void remote_object_finalize(Object *obj)
 
     k->nr_devs--;
     g_free(o->devid);
+
+    iothread_destroy(ioregionfd_iot);
+    /* Free the list of the ioregions. */
+    g_slist_foreach(ioregions_list, ioregionfd_release, NULL);
+    if (o->ioregfd_ioc) {
+        qio_channel_shutdown(o->ioregfd_ioc, QIO_CHANNEL_SHUTDOWN_BOTH, NULL);
+        qio_channel_close(o->ioregfd_ioc, NULL);
+    }
+
+    g_slist_free(ioregions_list);
+    g_hash_table_destroy(o->ioregionfd_hash);
 }
 
 static void remote_object_class_init(ObjectClass *klass, void *data)
