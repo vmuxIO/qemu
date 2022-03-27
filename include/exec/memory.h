@@ -712,6 +712,7 @@ void ram_discard_manager_unregister_listener(RamDiscardManager *rdm,
 
 typedef struct CoalescedMemoryRange CoalescedMemoryRange;
 typedef struct MemoryRegionIoeventfd MemoryRegionIoeventfd;
+typedef struct MemoryRegionIoregionfd MemoryRegionIoregionfd;
 
 /** MemoryRegion:
  *
@@ -974,6 +975,38 @@ struct MemoryListener {
      */
     void (*eventfd_del)(MemoryListener *listener, MemoryRegionSection *section,
                         bool match_data, uint64_t data, EventNotifier *e);
+
+    /**
+     * @ioregionfd_add:
+     *
+     * Called during an address space update transaction,
+     * for a section of the address space that has had a new ioregionfd
+     * registration since the last transaction.
+     *
+     * @listener: The #MemoryListener.
+     * @section: The new #MemoryRegionSection.
+     * @data: The @data parameter for the new ioregionfd.
+     * @fd: The file descriptor parameter for the new ioregionfd.
+     */
+    void (*ioregionfd_add)(MemoryListener *listener,
+                           MemoryRegionSection *section,
+                           uint64_t data, int fd);
+
+    /**
+     * @ioregionfd_del:
+     *
+     * Called during an address space update transaction,
+     * for a section of the address space that has dropped an ioregionfd
+     * registration since the last transaction.
+     *
+     * @listener: The #MemoryListener.
+     * @section: The new #MemoryRegionSection.
+     * @data: The @data parameter for the dropped ioregionfd.
+     * @fd: The file descriptor parameter for the dropped ioregionfd.
+     */
+    void (*ioregionfd_del)(MemoryListener *listener,
+                           MemoryRegionSection *section,
+                           uint64_t data, int fd);
 
     /**
      * @coalesced_io_add:
