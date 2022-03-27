@@ -757,6 +757,8 @@ struct MemoryRegion {
     const char *name;
     unsigned ioeventfd_nb;
     MemoryRegionIoeventfd *ioeventfds;
+    unsigned ioregionfd_nb;
+    MemoryRegionIoregionfd *ioregionfds;
     RamDiscardManager *rdm; /* Only for RAM */
 };
 
@@ -1074,6 +1076,8 @@ struct AddressSpace {
 
     int ioeventfd_nb;
     struct MemoryRegionIoeventfd *ioeventfds;
+    int ioregionfd_nb;
+    struct MemoryRegionIoregionfd *ioregionfds;
     QTAILQ_HEAD(, MemoryListener) listeners;
     QTAILQ_ENTRY(AddressSpace) address_spaces_link;
 };
@@ -2207,6 +2211,19 @@ void memory_region_del_eventfd(MemoryRegion *mr,
                                bool match_data,
                                uint64_t data,
                                EventNotifier *e);
+
+void memory_region_add_ioregionfd(MemoryRegion *mr,
+                                  hwaddr addr,
+                                  unsigned size,
+                                  uint64_t data,
+                                  int fd,
+                                  bool pio);
+
+void memory_region_del_ioregionfd(MemoryRegion *mr,
+                                  hwaddr addr,
+                                  unsigned size,
+                                  uint64_t data,
+                                  int fd);
 
 /**
  * memory_region_add_subregion: Add a subregion to a container.
