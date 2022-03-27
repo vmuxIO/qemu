@@ -1734,7 +1734,8 @@ static void kvm_io_ioregionfd_del(MemoryListener *listener,
     ioregionfd.memory_size = int128_get64(section->size);
     ioregionfd.user_data = data;
     ioregionfd.read_fd = fd;
-    ioregionfd.write_fd = KVM_IOREGION_DEASSIGN | KVM_IOREGION_PIO;
+    ioregionfd.write_fd = fd;
+    ioregionfd.flags = KVM_IOREGION_DEASSIGN | KVM_IOREGION_PIO;
     memset(&ioregionfd.pad, 0, sizeof(ioregionfd.pad));
 
     r = kvm_set_ioregionfd(&ioregionfd);
@@ -2681,7 +2682,7 @@ static int kvm_init(MachineState *ms)
         (kvm_check_extension(s, KVM_CAP_IOEVENTFD_ANY_LENGTH) > 0);
 
     kvm_ioregionfds_allowed =
-        (kvm_check_extension(s, KVM_CAP_IOREGIONFD));
+        (kvm_check_extension(s, KVM_CAP_IOREGIONFD) > 0);
 
     kvm_state = s;
 

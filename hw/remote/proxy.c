@@ -395,7 +395,7 @@ static void probe_pci_info(PCIDevice *dev, Error **errp)
             }
 #ifdef CONFIG_IOREGIONFD
             /*
-             * Currently, only one fd per device supported.
+             * Currently, only one fd per device is supported.
              * TODO: Drop this limit.
              */
             if (pdev->ioregfd) {
@@ -420,7 +420,7 @@ static void probe_pci_info(PCIDevice *dev, Error **errp)
                                              fd, false);
             } else {
                 memory_region_init_io(&pdev->region[i].mr, OBJECT(pdev),
-                                      NULL, &pdev->region[i],
+                                      &proxy_mr_ops, &pdev->region[i],
                                       name, size);
             }
             pci_register_bar(dev, i, type, &pdev->region[i].mr);

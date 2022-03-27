@@ -1,9 +1,9 @@
 /*
  * Memory manager for remote device
  *
- * Copyright © 2018, 2022 Oracle and/or its affiliates.
+ * Copyright © 2018, 2021 Oracle and/or its affiliates.
  *
- * This work is licensed under the terms of the GNU FPL, version 2 or later.
+ * This work is licensed under the terms of the GNU GPL, version 2 or later.
  * See the COPYING file in the top-level directory.
  *
  */
@@ -70,7 +70,7 @@ IORegionFD *ioregionfd_get_by_bar(GSList *list, uint32_t bar)
     GSList *elem;
 
     for (elem = list; elem; elem = elem->next) {
-        ioregionfd = elem->data; 
+        ioregionfd = elem->data;
 
         if (ioregionfd->ioregfd.bar == bar) {
             return &ioregionfd->ioregfd;
@@ -85,7 +85,7 @@ void ioregionfd_set_bar_type(GSList *list, uint32_t bar, bool memory)
     GSList *elem;
 
     for (elem = list; elem; elem = elem->next) {
-        ioregionfd = elem->data; 
+        ioregionfd = elem->data;
         if (ioregionfd->ioregfd.bar == bar) {
             ioregionfd->ioregfd.memory = memory;
         }
@@ -163,7 +163,7 @@ int qio_channel_ioregionfd_read(QIOChannel *ioc, gpointer opaque,
             resp.data = val;
             if (qio_channel_write_all(ioc, (char *)&resp, sizeof(resp),
                                       &local_err)) {
-                error_propagate(errp, local_err); 
+                error_propagate(errp, local_err);
                 goto fatal;
             }
             break;
@@ -187,7 +187,7 @@ int qio_channel_ioregionfd_read(QIOChannel *ioc, gpointer opaque,
                 if (qio_channel_write_all(ioc, (char *)&resp, sizeof(resp),
                                           &local_err)) {
                     error_propagate(errp, local_err);
-                    goto fatal; 
+                    goto fatal;
                 }
             }
             break;
@@ -198,7 +198,7 @@ int qio_channel_ioregionfd_read(QIOChannel *ioc, gpointer opaque,
     }
     return ret;
 
-fatal:
+ fatal:
     return -EINVAL;
 }
 
@@ -279,11 +279,11 @@ static void ioregionfd_object_set_start(Object *obj, Visitor *v,
     }
 
     if (value > UINT32_MAX) {
-        error_setg(errp, "BAR start %"PRIx64" is too big", value);
+        error_setg(errp, "BAR start %"PRId64" is too big", value);
         o->ioregfd.start = 0;
         return;
     }
-    
+
     o->ioregfd.start = value;
 }
 
@@ -297,12 +297,12 @@ static void ioregionfd_object_set_size(Object *obj, Visitor *v,
     if (!visit_type_int(v, name, &value, errp)) {
         return;
     }
-    
+
     if (value < 0) {
         error_setg(errp, "Invalid BAR size %"PRId64, value);
         return;
     }
-    
+
     if (value > UINT32_MAX) {
         error_setg(errp, "BAR size %"PRId64" is too big", value);
         o->ioregfd.size = 0;

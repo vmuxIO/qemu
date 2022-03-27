@@ -223,7 +223,7 @@ static bool memory_region_ioeventfd_equal(MemoryRegionIoeventfd *a,
 }
 
 static bool memory_region_ioregionfd_before(MemoryRegionIoregionfd *a,
-                                            MemoryRegionIoregionfd *b)
+                                           MemoryRegionIoregionfd *b)
 {
     if (int128_lt(a->addr.start, b->addr.start)) {
         return true;
@@ -881,6 +881,20 @@ static void address_space_add_del_ioregionfds(AddressSpace *as,
     }
 }
 
+FlatView *address_space_get_flatview(AddressSpace *as)
+{
+    FlatView *view;
+
+    RCU_READ_LOCK_GUARD();
+    do {
+        view = address_space_to_flatview(as);
+        /* If somebody has replaced as->current_map concurrently,
+         * flatview_ref returns false.
+         */
+    } while (!flatview_ref(view));
+    return view;
+}
+
 static void address_space_update_ioregionfds(AddressSpace *as)
 {
     FlatView *view;
@@ -925,20 +939,6 @@ static void address_space_update_ioregionfds(AddressSpace *as)
     as->ioregionfds = ioregionfds;
     as->ioregionfd_nb = ioregionfd_nb;
     flatview_unref(view);
-}
-
-FlatView *address_space_get_flatview(AddressSpace *as)
-{
-    FlatView *view;
-
-    RCU_READ_LOCK_GUARD();
-    do {
-        view = address_space_to_flatview(as);
-        /* If somebody has replaced as->current_map concurrently,
-         * flatview_ref returns false.
-         */
-    } while (!flatview_ref(view));
-    return view;
 }
 
 static void address_space_update_ioeventfds(AddressSpace *as)
@@ -1242,7 +1242,7 @@ void memory_region_transaction_commit(void)
             ioeventfd_update_pending = false;
         } else if (ioregionfd_update_pending) {
             QTAILQ_FOREACH(as, &address_spaces, address_spaces_link) {
-                address_space_update_ioeventfds(as);
+                address_space_update_ioregionfds(as);
             }
             ioregionfd_update_pending = false;
         }
@@ -2585,7 +2585,7 @@ void memory_region_add_ioregionfd(MemoryRegion *mr,
     unsigned i;
 
     if (kvm_enabled() && !kvm_ioregionfds_enabled()) {
-        error_report("KVM_does not support KVM_CAP_IOREGIONFD");
+        error_report("KVM does not support KVM_CAP_IOREGIONFD");
     }
 
     memory_region_transaction_begin();

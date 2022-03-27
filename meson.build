@@ -260,13 +260,13 @@ multiprocess_allowed = targetos == 'linux' and not get_option('multiprocess').di
 
 # TODO: drop this limitation
 if not multiprocess_allowed and not get_option('ioregionfd').disabled()
-  error('To enable ioregionfd support, enable multiprocess option.')
+  error('To enable ioregiofd support, enable mutliprocess option.')
 endif
 ioregionfd_allowed = multiprocess_allowed and not get_option('ioregionfd').disabled()
 if ioregionfd_allowed
-  config_host += { 'CONFIG_IOREGIONFD': 'y' }
+    config_host += { 'CONFIG_IOREGIONFD': 'y' }
 else
-  config_host += { 'CONFIG_IOREGIONFD': 'n' }
+    config_host += { 'CONFIG_IOREGIONFD': 'n' }
 endif
 
 libm = cc.find_library('m', required: false)

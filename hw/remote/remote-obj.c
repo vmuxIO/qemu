@@ -147,12 +147,12 @@ static void ioregionfd_prepare_for_dev(RemoteObject *o, PCIDevice *dev)
 
     /*
      * Take first element in the list of ioregions and use its fd
-     * for all regionfds for this device.
+     * for all regions for this device.
      * TODO: make this more flexible and allow different fd for the
      * device.
      */
     ioregfd_obj = list->data;
- 
+
     /* This is default and will be changed when proxy requests region info. */
     ioregfd_obj->ioregfd.memory = true;
 
@@ -167,7 +167,7 @@ static void ioregionfd_prepare_for_dev(RemoteObject *o, PCIDevice *dev)
 
     if (ioregionfd_iot == NULL) {
         ioregionfd_iot = iothread_create("ioregionfd iothread",
-                                         &local_err);
+                                       &local_err);
         if (local_err) {
             qio_channel_shutdown(o->ioregfd_ioc, QIO_CHANNEL_SHUTDOWN_BOTH,
                                  NULL);
@@ -183,7 +183,7 @@ static void ioregionfd_prepare_for_dev(RemoteObject *o, PCIDevice *dev)
     ioregions_list = list;
     return;
 
-fatal:
+ fatal:
     g_slist_free(list);
     g_hash_table_destroy(o->ioregionfd_hash);
     return;

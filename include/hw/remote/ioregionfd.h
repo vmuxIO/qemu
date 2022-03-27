@@ -1,7 +1,7 @@
 /*
  * Ioregionfd headers
  *
- * Copyright © 2018, 2022 Oracle and/or its aggiliates.
+ * Copyright © 2018, 2022 Oracle and/or its affiliates.
  *
  * This work is licensed under the terms of the GNU GPL, version 2 or later.
  * See the COPYING file in the top-level directory.
@@ -42,5 +42,4 @@ IORegionFD *ioregionfd_get_by_bar(GSList *list, uint32_t bar);
 void ioregionfd_set_bar_type(GSList *list, uint32_t bar, bool memory);
 int qio_channel_ioregionfd_read(QIOChannel *ioc, gpointer opaque,
                                 Error **errp);
-
 #endif /* IOREGIONFD_H */

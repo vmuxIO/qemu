@@ -7,8 +7,8 @@
  * See the COPYING file in the top-level directory.
  *
  */
-#ifndef REMOTE_T
-#define REMOTE_T
+#ifndef REMOTE_H
+#define REMOTE_H
 
 struct RemoteObject {
     /* private */

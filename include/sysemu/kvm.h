@@ -169,10 +169,10 @@ extern bool kvm_ioregionfds_allowed;
 #define kvm_msi_devid_required() (kvm_msi_use_devid)
 
 /**
- * kvm_ioregionfds_allowed:
+ * kvm_ioregionfds_enabled:
  *
  * Returns: true if we can use ioregionfd to receive the MMIO/PIO
- * dispatches from KVM (io the kernel supports ioregionfd and we are running
+ * dispatches from KVM (ie the kernel supports ioregionfd and we are running
  * with a configuration where it is meaningful to use them).
  */
 #define kvm_ioregionfds_enabled() (kvm_ioregionfds_allowed)

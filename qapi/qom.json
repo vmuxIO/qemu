@@ -866,9 +866,9 @@
     'tls-creds-x509',
     'tls-cipher-suites',
     { 'name': 'x-remote-object', 'features': [ 'unstable' ] },
-    { 'name':'ioregionfd-object',
+    { 'name' :'ioregionfd-object',
       'if': 'CONFIG_IOREGIONFD' }
-  ] }
+ ] }
 
 ##
 # @ObjectOptions:

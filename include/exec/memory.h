@@ -977,7 +977,6 @@ struct MemoryListener {
      */
     void (*eventfd_del)(MemoryListener *listener, MemoryRegionSection *section,
                         bool match_data, uint64_t data, EventNotifier *e);
-
     /**
      * @ioregionfd_add:
      *
@@ -1009,6 +1008,7 @@ struct MemoryListener {
     void (*ioregionfd_del)(MemoryListener *listener,
                            MemoryRegionSection *section,
                            uint64_t data, int fd);
+
 
     /**
      * @coalesced_io_add:
