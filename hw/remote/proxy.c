@@ -146,6 +146,33 @@ static void pci_proxy_dev_exit(PCIDevice *pdev)
     event_notifier_cleanup(&dev->resample);
 }
 
+static void config_get_ioregionfd_info(PCIProxyDev *pdev, uint32_t reg_num,
+                                       uint32_t *val, bool memory)
+{
+    MPQemuMsg msg = { 0 };
+    Error *local_err = NULL;
+    uint64_t ret = -EINVAL;
+
+    memset(&msg, 0, sizeof(MPQemuMsg));
+    msg.cmd = MPQEMU_CMD_BAR_INFO;
+    msg.num_fds = 0;
+    msg.data.u64 = (uint64_t)reg_num & MAKE_64BIT_MASK(0, 32);
+
+    msg.data.u64 |= memory ? (1ULL << 32) : 0;
+    msg.size = sizeof(msg.data.u64);
+
+    ret = mpqemu_msg_send_and_await_reply(&msg, pdev, &local_err);
+    if (local_err) {
+        error_report_err(local_err);
+        error_report("Error while receiving reply from remote about fd");
+    }
+    if (ret == UINT64_MAX) {
+        error_report("Failed to request bar info for %d", reg_num);
+    }
+
+    *val = (uint32_t)ret;
+}
+
 static void config_op_send(PCIProxyDev *pdev, uint32_t addr, uint32_t *val,
                            int len, unsigned int op)
 {
@@ -198,6 +225,7 @@ static void pci_proxy_write_config(PCIDevice *d, uint32_t addr, uint32_t val,
 
 static Property proxy_properties[] = {
     DEFINE_PROP_STRING("fd", PCIProxyDev, fd),
+    DEFINE_PROP_STRING("ioregfd", PCIProxyDev, ioregfd),
     DEFINE_PROP_END_OF_LIST(),
 };
 
@@ -297,7 +325,7 @@ const MemoryRegionOps proxy_mr_ops = {
 static void probe_pci_info(PCIDevice *dev, Error **errp)
 {
     PCIDeviceClass *pc = PCI_DEVICE_GET_CLASS(dev);
-    uint32_t orig_val, new_val, base_class, val;
+    uint32_t orig_val, new_val, base_class, val, ioregionfd_bar;
     PCIProxyDev *pdev = PCI_PROXY_DEV(dev);
     DeviceClass *dc = DEVICE_CLASS(pc);
     uint8_t type;
@@ -342,6 +370,9 @@ static void probe_pci_info(PCIDevice *dev, Error **errp)
     }
 
     for (i = 0; i < PCI_NUM_REGIONS; i++) {
+        bool init_ioregionfd = false;
+        int fd = -1;
+
         config_op_send(pdev, PCI_BASE_ADDRESS_0 + (4 * i), &orig_val, 4,
                        MPQEMU_CMD_PCI_CFGREAD);
         new_val = 0xffffffff;
@@ -362,9 +393,36 @@ static void probe_pci_info(PCIDevice *dev, Error **errp)
             if (type == PCI_BASE_ADDRESS_SPACE_MEMORY) {
                 pdev->region[i].memory = true;
             }
-            memory_region_init_io(&pdev->region[i].mr, OBJECT(pdev),
-                                  &proxy_mr_ops, &pdev->region[i],
-                                  name, size);
+#ifdef CONFIG_IOREGIONFD
+            /*
+             * Currently, only one fd per device supported.
+             * TODO: Drop this limit.
+             */
+            if (pdev->ioregfd) {
+                fd = monitor_fd_param(monitor_cur(), pdev->ioregfd, errp);
+                if (fd == -1) {
+                    error_prepend(errp, "Could not parse ioregionfd fd %s:",
+                                  pdev->ioregfd);
+                }
+
+                config_get_ioregionfd_info(pdev, i, &ioregionfd_bar,
+                                           pdev->region[i].memory);
+                if (ioregionfd_bar == i) {
+                    init_ioregionfd = true;
+                }
+            }
+#endif
+            if (init_ioregionfd) {
+                memory_region_init_io(&pdev->region[i].mr, OBJECT(pdev),
+                                      NULL, &pdev->region[i],
+                                      name, size);
+                memory_region_add_ioregionfd(&pdev->region[i].mr, 0, size, i,
+                                             fd, false);
+            } else {
+                memory_region_init_io(&pdev->region[i].mr, OBJECT(pdev),
+                                      NULL, &pdev->region[i],
+                                      name, size);
+            }
             pci_register_bar(dev, i, type, &pdev->region[i].mr);
         }
     }
