@@ -3711,6 +3711,7 @@ static Property virtio_properties[] = {
     DEFINE_PROP_BOOL("use-disabled-flag", VirtIODevice, use_disabled_flag, true),
     DEFINE_PROP_BOOL("x-disable-legacy-check", VirtIODevice,
                      disable_legacy_check, false),
+    DEFINE_PROP_BOOL("use-ioregionfd", VirtIODevice, use_ioregionfd, false),
     DEFINE_PROP_END_OF_LIST(),
 };
 
