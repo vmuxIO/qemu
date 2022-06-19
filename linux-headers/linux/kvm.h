@@ -956,7 +956,6 @@ struct kvm_ppc_resize_hpt {
 #define KVM_CAP_PIT_STATE2 35
 #endif
 #define KVM_CAP_IOEVENTFD 36
-#define KVM_CAP_IOREGIONFD 206
 #define KVM_CAP_SET_IDENTITY_MAP_ADDR 37
 #ifdef __KVM_HAVE_XEN_HVM
 #define KVM_CAP_XEN_HVM 38
@@ -1136,6 +1135,7 @@ struct kvm_ppc_resize_hpt {
 #define KVM_CAP_BINARY_STATS_FD 203
 #define KVM_CAP_EXIT_ON_EMULATION_FAILURE 204
 #define KVM_CAP_ARM_MTE 205
+#define KVM_CAP_IOREGIONFD 206
 
 #ifdef KVM_CAP_IRQ_ROUTING
 
