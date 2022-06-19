@@ -68,3 +68,7 @@ config VHOST_USER_RNG
     bool
     default y
     depends on VIRTIO && VHOST_USER
+
+config IOREGIONFD
+    bool
+    default n
