@@ -2681,8 +2681,8 @@ static int kvm_init(MachineState *ms)
     kvm_ioeventfd_any_length_allowed =
         (kvm_check_extension(s, KVM_CAP_IOEVENTFD_ANY_LENGTH) > 0);
 
-    kvm_ioregionfds_allowed =
-        (kvm_check_extension(s, KVM_CAP_IOREGIONFD) > 0);
+    kvm_ioregionfds_allowed = 1;
+        // (kvm_check_extension(s, KVM_CAP_IOREGIONFD) > 0);
 
     kvm_state = s;
 
