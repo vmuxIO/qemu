@@ -23,6 +23,8 @@
 #define HW_VIRTIO_MMIO_H
 
 #include "hw/virtio/virtio-bus.h"
+#include "io/channel.h"
+#include "qemu/typedefs.h"
 #include "qom/object.h"
 
 #include "ioregionfd.h"
@@ -76,5 +78,9 @@ struct VirtIOMMIOProxy {
     uint32_t guest_features[2];
     VirtIOMMIOQueue vqs[VIRTIO_QUEUE_MAX];
 };
+
+uint64_t virtio_mmio_read(void *opaque, hwaddr offset, unsigned size);
+void virtio_mmio_write(void *opaque, hwaddr offset, uint64_t value,
+                       unsigned size);
 
 #endif

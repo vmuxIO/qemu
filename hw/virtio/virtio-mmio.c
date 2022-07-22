@@ -81,7 +81,7 @@ static void virtio_mmio_soft_reset(VirtIOMMIOProxy *proxy)
     }
 }
 
-static uint64_t virtio_mmio_read(void *opaque, hwaddr offset, unsigned size)
+uint64_t virtio_mmio_read(void *opaque, hwaddr offset, unsigned size)
 {
     VirtIOMMIOProxy *proxy = (VirtIOMMIOProxy *)opaque;
     VirtIODevice *vdev = virtio_bus_get_device(&proxy->bus);
@@ -243,7 +243,7 @@ static uint64_t virtio_mmio_read(void *opaque, hwaddr offset, unsigned size)
     return 0;
 }
 
-static void virtio_mmio_write(void *opaque, hwaddr offset, uint64_t value,
+void virtio_mmio_write(void *opaque, hwaddr offset, uint64_t value,
                               unsigned size)
 {
     VirtIOMMIOProxy *proxy = (VirtIOMMIOProxy *)opaque;
