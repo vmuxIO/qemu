@@ -20,6 +20,8 @@
  */
 
 #include "qemu/osdep.h"
+#include "io/channel-util.h"
+#include "qemu/typedefs.h"
 #include "standard-headers/linux/virtio_mmio.h"
 #include "hw/irq.h"
 #include "hw/qdev-properties.h"
@@ -28,12 +30,22 @@
 #include "migration/qemu-file-types.h"
 #include "qemu/host-utils.h"
 #include "qemu/module.h"
+#include "sysemu/iothread.h"
 #include "sysemu/kvm.h"
 #include "sysemu/replay.h"
 #include "hw/virtio/virtio-mmio.h"
 #include "qemu/error-report.h"
 #include "qemu/log.h"
+#include "monitor/monitor.h"
+#include "qapi/error.h"
+#include "io/channel.h"
 #include "trace.h"
+#include "linux/kvm.h"
+// #include "exec/memory-internal.h"
+
+#include "ioregionfd.h"
+#include "hw/virtio/ioregionfd.h"
+
 
 static bool virtio_mmio_ioeventfd_enabled(DeviceState *d)
 {
@@ -707,14 +719,120 @@ assign_error:
     return r;
 }
 
+static IOThread *ioregionfd_iot;
+
+static void ioregionfd_read(void *opaque)
+{
+    struct VirtIOMMIOProxy *proxy = opaque;
+    Error *local_error = NULL;
+
+    virtio_qio_channel_ioregionfd_read(proxy->ioregfd.ioc, opaque,
+                                       &local_error);
+}
+
+static void virtio_mmio_ioregionfd_prepare_for_dev(VirtIOMMIOProxy *proxy)
+{
+    QIOChannel *ioc = NULL;
+    Error *local_err = NULL;
+    int fds[2] = {-1, -1};
+    VirtIODevice *vdev = virtio_bus_get_device(&proxy->bus);
+
+    proxy->ioregfd.kvmfd = -1;
+    proxy->ioregfd.devfd = -1;
+    if (socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, fds) < 0) {
+        error_prepend(&local_err, "Could not create socketpair for " \
+                      "ioregionfd for virtio device %s", vdev->name);
+        goto fatal;
+    }
+
+    proxy->ioregfd.kvmfd = fds[0];
+    proxy->ioregfd.devfd = fds[1];
+
+    ioc = qio_channel_new_fd(proxy->ioregfd.devfd, &local_err);
+    if (!ioc) {
+        error_prepend(&local_err, "Could not create IOC channel for" \
+                      "ioregionfd fd %d for virtio device %s",
+                      proxy->ioregfd.devfd, vdev->name);
+        error_report_err(local_err);
+        goto fatal;
+    }
+    proxy->ioregfd.ioc = ioc;
+
+    if (ioregionfd_iot == NULL) {
+        ioregionfd_iot = iothread_create("virtio-mmio ioregionfd iothread",
+                                         &local_err);
+        if (local_err) {
+            qio_channel_shutdown(proxy->ioregfd.ioc, QIO_CHANNEL_SHUTDOWN_BOTH,
+                                 NULL);
+            qio_channel_close(proxy->ioregfd.ioc, NULL);
+            error_report_err(local_err);
+            goto fatal;
+        }
+    }
+
+    proxy->ioregfd.ctx = iothread_get_aio_context(ioregionfd_iot);
+    qio_channel_set_aio_fd_handler(proxy->ioregfd.ioc, proxy->ioregfd.ctx,
+                                   ioregionfd_read, NULL, proxy);
+
+fatal:
+    return;
+}
+
+// static bool unassigned_mem_accepts(void *opaque, hwaddr addr,
+//                                    unsigned size, bool is_write,
+//                                    MemTxAttrs attrs)
+// {
+//     return false;
+// }
+// 
+// const MemoryRegionOps unassigned_mem_ops = {
+//     .valid.accepts = unassigned_mem_accepts,
+//     .endianness = DEVICE_NATIVE_ENDIAN,
+// };
+extern const MemoryRegionOps unassigned_mem_ops;
+
 static void virtio_mmio_pre_plugged(DeviceState *d, Error **errp)
 {
     VirtIOMMIOProxy *proxy = VIRTIO_MMIO(d);
     VirtIODevice *vdev = virtio_bus_get_device(&proxy->bus);
+#ifdef CONFIG_IOREGIONFD
+    struct kvm_ioregion ioregion;
+    int ret = -1;
+#endif
 
     if (!proxy->legacy) {
         virtio_add_feature(&vdev->host_features, VIRTIO_F_VERSION_1);
     }
+
+#ifdef CONFIG_IOREGIONFD
+    if (vdev->use_ioregionfd) {
+        virtio_mmio_ioregionfd_prepare_for_dev(proxy);
+        if (proxy->ioregfd.kvmfd != -1) {
+            // prepare ioregionfd struct
+            // NOTE: Apparently IORegionFD does not work with all registers
+            //       but with some like the config area we are using here.
+            ioregion.guest_paddr = proxy->iomem.addr + 0x100;
+            ioregion.memory_size = 0x100;
+            ioregion.user_data = 0;
+            ioregion.read_fd = proxy->ioregfd.kvmfd;
+            ioregion.write_fd = proxy->ioregfd.kvmfd;
+            ioregion.flags = 0;
+            memset(&ioregion.pad, 0, sizeof(ioregion.pad));
+
+            // register ioregionfd
+            ret = kvm_set_ioregionfd(&ioregion);
+            if (ret < 0) {
+                error_setg(errp,
+                           "Could not set ioregionfd for virtio device %s",
+                           vdev->name);
+                return;
+            }
+
+            // unregister memory operations for region
+            // proxy->iomem.ops = &unassigned_mem_ops;
+        }
+    }
+#endif
 }
 
 /* virtio-mmio device */
