@@ -5,14 +5,13 @@
 /* Wire protocol */
 
 struct ioregionfd_cmd {
-	__u8 cmd;
-	__u8 size_exponent : 4;
-	__u8 resp : 1;
-	__u8 padding[6];
+	__u8 cmd : 4;
+	__u8 size_exponent : 2;
+	__u8 resp : 2;
 	__u64 user_data;
 	__u64 offset;
 	__u64 data;
-};
+} __attribute__((packed));
 
 struct ioregionfd_resp {
 	__u64 data;
