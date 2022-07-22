@@ -25,6 +25,9 @@
 #include "hw/virtio/virtio-bus.h"
 #include "qom/object.h"
 
+#include "ioregionfd.h"
+#include "hw/virtio/ioregionfd.h"
+
 /* QOM macros */
 /* virtio-mmio-bus */
 #define TYPE_VIRTIO_MMIO_BUS "virtio-mmio-bus"
@@ -60,6 +63,8 @@ struct VirtIOMMIOProxy {
     qemu_irq irq;
     bool legacy;
     uint32_t flags;
+    /* IoRegionFd */
+    IORegionFD ioregfd;
     /* Guest accessible state needing migration and reset */
     uint32_t host_features_sel;
     uint32_t guest_features_sel;
