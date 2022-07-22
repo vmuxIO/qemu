@@ -53,3 +53,5 @@ virtio_pci_ss.add(when: 'CONFIG_VIRTIO_MEM', if_true: files('virtio-mem-pci.c'))
 virtio_ss.add_all(when: 'CONFIG_VIRTIO_PCI', if_true: virtio_pci_ss)
 
 specific_ss.add_all(when: 'CONFIG_VIRTIO', if_true: virtio_ss)
+
+specific_ss.add(when: 'CONFIG_IOREGIONFD', if_true: files('ioregionfd.c'))
