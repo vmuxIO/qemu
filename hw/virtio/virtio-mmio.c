@@ -779,17 +779,6 @@ fatal:
     return ret;
 }
 
-// static bool unassigned_mem_accepts(void *opaque, hwaddr addr,
-//                                    unsigned size, bool is_write,
-//                                    MemTxAttrs attrs)
-// {
-//     return false;
-// }
-// 
-// const MemoryRegionOps unassigned_mem_ops = {
-//     .valid.accepts = unassigned_mem_accepts,
-//     .endianness = DEVICE_NATIVE_ENDIAN,
-// };
 extern const MemoryRegionOps unassigned_mem_ops;
 
 static void virtio_mmio_pre_plugged(DeviceState *d, Error **errp)
