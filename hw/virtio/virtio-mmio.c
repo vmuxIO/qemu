@@ -721,17 +721,6 @@ assign_error:
 
 static IOThread *ioregionfd_iot;
 
-static void virtio_mmio_ioregionfd_read(void *opaque)
-{
-    IORegionFD *ioregfd = opaque;
-    Error *local_error = NULL;
-
-    virtio_ioregionfd_qio_channel_read(ioregfd,
-                                       virtio_mmio_read,
-                                       virtio_mmio_write,
-                                       &local_error);
-}
-
 static int virtio_ioregionfd_channel_setup(QIOChannel **ioc,
                                            AioContext **ctx,
                                            int *kvmfd,
@@ -779,12 +768,78 @@ fatal:
 
 extern const MemoryRegionOps unassigned_mem_ops;
 
+static int virtio_ioregionfd_init(IORegionFD *ioregfd,
+                                  int kvmfd,
+                                  int devfd,
+                                  gpointer opaque,
+                                  MemoryRegion *mr,
+                                  uint64_t offset,
+                                  uint32_t size,
+                                  QIOChannel *ioc,
+                                  AioContext *ctx,
+                                  ioregionfd_handler handler)
+{
+    struct kvm_ioregion ioregion;
+    Error *local_error = NULL;
+    int ret = -1;
+
+    // initialize local ioregionfd struct
+    ioregfd->kvmfd = kvmfd;
+    ioregfd->devfd = devfd;
+    ioregfd->opaque = opaque;
+    ioregfd->offset = offset;
+    ioregfd->size = size;
+    ioregfd->ioc = ioc;
+    ioregfd->ctx = ctx;
+
+    // register io channel handler
+    qio_channel_set_aio_fd_handler(ioc, ctx, *handler, NULL, ioregfd);
+
+    // initialize ioregion kernel struct
+    ioregion.guest_paddr = mr->addr + offset;
+    ioregion.memory_size = size;
+    ioregion.user_data = 0;
+    ioregion.read_fd = kvmfd;
+    ioregion.write_fd = kvmfd;
+    ioregion.flags = 0;
+    memset(&ioregion.pad, 0, sizeof(ioregion.pad));
+
+    // register ioregion with kvm
+    if (kvm_set_ioregionfd(&ioregion)) {
+        error_setg(&local_error, "Could not register ioregionfd");
+        goto fatal;
+    }
+
+    // remove memops if entire region is handled by ioregionfd
+    if (offset == 0 && size == mr->size) {
+       mr->ops = &unassigned_mem_ops;
+    }
+
+    ret = 0;
+fatal:
+    return ret;
+}
+
+void virtio_mmio_ioregionfd_handler(void *opaque)
+{
+    IORegionFD *ioregfd = opaque;
+    Error *local_error = NULL;
+
+    virtio_ioregionfd_qio_channel_read(ioregfd,
+                                       virtio_mmio_read,
+                                       virtio_mmio_write,
+                                       &local_error);
+}
+
 static void virtio_mmio_pre_plugged(DeviceState *d, Error **errp)
 {
     VirtIOMMIOProxy *proxy = VIRTIO_MMIO(d);
     VirtIODevice *vdev = virtio_bus_get_device(&proxy->bus);
 #ifdef CONFIG_IOREGIONFD
-    struct kvm_ioregion ioregion;
+    int kvmfd;
+    int devfd;
+    QIOChannel *ioc;
+    AioContext *ctx;
     int ret = -1;
 #endif
 
@@ -795,46 +850,28 @@ static void virtio_mmio_pre_plugged(DeviceState *d, Error **errp)
 #ifdef CONFIG_IOREGIONFD
     if (vdev->use_ioregionfd) {
         // virtio_mmio_ioregionfd_prepare_for_dev(proxy);
-        if (virtio_ioregionfd_channel_setup(&proxy->ioregfd.ioc,
-                                            &proxy->ioregfd.ctx,
-                                            &proxy->ioregfd.kvmfd,
-                                            &proxy->ioregfd.devfd,
+        if (virtio_ioregionfd_channel_setup(&ioc,
+                                            &ctx,
+                                            &kvmfd,
+                                            &devfd,
                                             errp)) {
             error_prepend(errp, "Could not setup ioregionfd channel.");
             error_report_err(*errp);
         } else {
-            proxy->ioregfd.opaque = (gpointer) proxy;
-            proxy->ioregfd.offset = 0x0;
-            proxy->ioregfd.size = 0x50;
-
-            // prepare ioregionfd struct
-            // NOTE: Apparently IORegionFD does not work with all registers
-            //       but with some like the config area we are using here.
-            ioregion.guest_paddr = proxy->iomem.addr + proxy->ioregfd.offset;
-            ioregion.memory_size = proxy->ioregfd.size;
-            ioregion.user_data = 0;
-            ioregion.read_fd = proxy->ioregfd.kvmfd;
-            ioregion.write_fd = proxy->ioregfd.kvmfd;
-            ioregion.flags = 0;
-            memset(&ioregion.pad, 0, sizeof(ioregion.pad));
-            
-            qio_channel_set_aio_fd_handler(proxy->ioregfd.ioc,
-                                           proxy->ioregfd.ctx,
-                                           virtio_mmio_ioregionfd_read,
-                                           NULL,
-                                           &proxy->ioregfd);
-
-            // register ioregionfd
-            ret = kvm_set_ioregionfd(&ioregion);
-            if (ret < 0) {
-                error_setg(errp,
-                           "Could not set ioregionfd for virtio device %s",
-                           vdev->name);
-                return;
+            ret = virtio_ioregionfd_init(&proxy->ioregfd,
+                                         kvmfd,
+                                         devfd,
+                                         proxy,
+                                         &proxy->iomem,
+                                         0x0,
+                                         0x50,
+                                         ioc,
+                                         ctx,
+                                         virtio_mmio_ioregionfd_handler);
+            if (ret) {
+                error_prepend(errp, "Could not initialize ioregionfd.");
+                error_report_err(*errp);
             }
-
-            // unregister memory operations for region
-            // proxy->iomem.ops = &unassigned_mem_ops;
         }
     }
 #endif

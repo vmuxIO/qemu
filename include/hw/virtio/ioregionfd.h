@@ -24,6 +24,12 @@ typedef uint64_t (*mr_read_func)(void *opaque, hwaddr addr, unsigned size);
 typedef void (*mr_write_func)(void *opaque, hwaddr addr, uint64_t value,
                               unsigned size);
 
+// generic virtio ioregionfd handler function type
+typedef void (*ioregionfd_handler)(void *opaque);
+
+// virtio ioregionfd channel read prototypes
+void virtio_mmio_ioregionfd_handler(void *opaque);
+
 // this function handles ioregionfd reads and write for both virtio-mmio and
 // the different memory regions of virtio-pci
 int virtio_ioregionfd_qio_channel_read(IORegionFD *ioregfd,
