@@ -734,53 +734,49 @@ static void virtio_mmio_ioregionfd_read(void *opaque)
                                        &local_error);
 }
 
-static void virtio_mmio_ioregionfd_prepare_for_dev(VirtIOMMIOProxy *proxy)
+static int virtio_ioregionfd_channel_setup(QIOChannel **ioc,
+                                           AioContext **ctx,
+                                           int *kvmfd,
+                                           int *devfd,
+                                           Error **errp)
 {
-    QIOChannel *ioc = NULL;
-    Error *local_err = NULL;
+    int ret = -1;
     int fds[2] = {-1, -1};
-    VirtIODevice *vdev = virtio_bus_get_device(&proxy->bus);
 
-    proxy->ioregfd.kvmfd = -1;
-    proxy->ioregfd.devfd = -1;
+    // create fds from socketpair
     if (socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, fds) < 0) {
-        error_prepend(&local_err, "Could not create socketpair for " \
-                      "ioregionfd for virtio device %s", vdev->name);
+        error_prepend(errp, "Could not create socketpair for ioregionfd");
+        error_report_err(*errp);
+        goto fatal;
+    }
+    *kvmfd = fds[0];
+    *devfd = fds[1];
+
+    // create io channel
+    if (!(*ioc = qio_channel_new_fd(*devfd, errp))) {
+        error_prepend(errp, "Could not create IOC channel for" \
+                      "ioregionfd fd %d.", *devfd);
+        error_report_err(*errp);
         goto fatal;
     }
 
-    proxy->ioregfd.kvmfd = fds[0];
-    proxy->ioregfd.devfd = fds[1];
-
-    ioc = qio_channel_new_fd(proxy->ioregfd.devfd, &local_err);
-    if (!ioc) {
-        error_prepend(&local_err, "Could not create IOC channel for" \
-                      "ioregionfd fd %d for virtio device %s",
-                      proxy->ioregfd.devfd, vdev->name);
-        error_report_err(local_err);
-        goto fatal;
-    }
-    proxy->ioregfd.ioc = ioc;
-
+    // create io thread
     if (ioregionfd_iot == NULL) {
-        ioregionfd_iot = iothread_create("virtio-mmio ioregionfd iothread",
-                                         &local_err);
-        if (local_err) {
-            qio_channel_shutdown(proxy->ioregfd.ioc, QIO_CHANNEL_SHUTDOWN_BOTH,
-                                 NULL);
-            qio_channel_close(proxy->ioregfd.ioc, NULL);
-            error_report_err(local_err);
+        ioregionfd_iot = iothread_create("virtio ioregionfd iothread", errp);
+        if (*errp) {
+            qio_channel_shutdown(*ioc, QIO_CHANNEL_SHUTDOWN_BOTH, NULL);
+            qio_channel_close(*ioc, NULL);
+            error_report_err(*errp);
             goto fatal;
         }
     }
 
-    proxy->ioregfd.ctx = iothread_get_aio_context(ioregionfd_iot);
-    qio_channel_set_aio_fd_handler(proxy->ioregfd.ioc, proxy->ioregfd.ctx,
-                                   virtio_mmio_ioregionfd_read, NULL,
-                                   &proxy->ioregfd);
+    // get aio context
+    *ctx = iothread_get_aio_context(ioregionfd_iot);
 
+    ret = 0;
 fatal:
-    return;
+    return ret;
 }
 
 // static bool unassigned_mem_accepts(void *opaque, hwaddr addr,
@@ -811,8 +807,15 @@ static void virtio_mmio_pre_plugged(DeviceState *d, Error **errp)
 
 #ifdef CONFIG_IOREGIONFD
     if (vdev->use_ioregionfd) {
-        virtio_mmio_ioregionfd_prepare_for_dev(proxy);
-        if (proxy->ioregfd.kvmfd != -1) {
+        // virtio_mmio_ioregionfd_prepare_for_dev(proxy);
+        if (virtio_ioregionfd_channel_setup(&proxy->ioregfd.ioc,
+                                            &proxy->ioregfd.ctx,
+                                            &proxy->ioregfd.kvmfd,
+                                            &proxy->ioregfd.devfd,
+                                            errp)) {
+            error_prepend(errp, "Could not setup ioregionfd channel.");
+            error_report_err(*errp);
+        } else {
             proxy->ioregfd.opaque = (gpointer) proxy;
             proxy->ioregfd.offset = 0x0;
             proxy->ioregfd.size = 0x50;
@@ -827,6 +830,12 @@ static void virtio_mmio_pre_plugged(DeviceState *d, Error **errp)
             ioregion.write_fd = proxy->ioregfd.kvmfd;
             ioregion.flags = 0;
             memset(&ioregion.pad, 0, sizeof(ioregion.pad));
+            
+            qio_channel_set_aio_fd_handler(proxy->ioregfd.ioc,
+                                           proxy->ioregfd.ctx,
+                                           virtio_mmio_ioregionfd_read,
+                                           NULL,
+                                           &proxy->ioregfd);
 
             // register ioregionfd
             ret = kvm_set_ioregionfd(&ioregion);
