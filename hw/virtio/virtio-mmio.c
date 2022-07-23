@@ -721,10 +721,7 @@ assign_error:
 
 static IOThread *ioregionfd_iot;
 
-static int virtio_ioregionfd_channel_setup(QIOChannel **ioc,
-                                           AioContext **ctx,
-                                           int *kvmfd,
-                                           int *devfd,
+static int virtio_ioregionfd_channel_setup(IORegionFD *ioregfd,
                                            Error **errp)
 {
     int ret = -1;
@@ -736,13 +733,13 @@ static int virtio_ioregionfd_channel_setup(QIOChannel **ioc,
         error_report_err(*errp);
         goto fatal;
     }
-    *kvmfd = fds[0];
-    *devfd = fds[1];
+    ioregfd->kvmfd = fds[0];
+    ioregfd->devfd = fds[1];
 
     // create io channel
-    if (!(*ioc = qio_channel_new_fd(*devfd, errp))) {
+    if (!(ioregfd->ioc = qio_channel_new_fd(ioregfd->devfd, errp))) {
         error_prepend(errp, "Could not create IOC channel for" \
-                      "ioregionfd fd %d.", *devfd);
+                      "ioregionfd fd %d.", ioregfd->devfd);
         error_report_err(*errp);
         goto fatal;
     }
@@ -751,15 +748,16 @@ static int virtio_ioregionfd_channel_setup(QIOChannel **ioc,
     if (ioregionfd_iot == NULL) {
         ioregionfd_iot = iothread_create("virtio ioregionfd iothread", errp);
         if (*errp) {
-            qio_channel_shutdown(*ioc, QIO_CHANNEL_SHUTDOWN_BOTH, NULL);
-            qio_channel_close(*ioc, NULL);
+            qio_channel_shutdown(ioregfd->ioc, QIO_CHANNEL_SHUTDOWN_BOTH,
+                                 NULL);
+            qio_channel_close(ioregfd->ioc, NULL);
             error_report_err(*errp);
             goto fatal;
         }
     }
 
     // get aio context
-    *ctx = iothread_get_aio_context(ioregionfd_iot);
+    ioregfd->ctx = iothread_get_aio_context(ioregionfd_iot);
 
     ret = 0;
 fatal:
@@ -769,38 +767,41 @@ fatal:
 extern const MemoryRegionOps unassigned_mem_ops;
 
 static int virtio_ioregionfd_init(IORegionFD *ioregfd,
-                                  int kvmfd,
-                                  int devfd,
                                   gpointer opaque,
                                   MemoryRegion *mr,
                                   uint64_t offset,
                                   uint32_t size,
-                                  QIOChannel *ioc,
-                                  AioContext *ctx,
                                   ioregionfd_handler handler)
 {
     struct kvm_ioregion ioregion;
     Error *local_error = NULL;
     int ret = -1;
 
-    // initialize local ioregionfd struct
-    ioregfd->kvmfd = kvmfd;
-    ioregfd->devfd = devfd;
+    // setup the io channel
+    if (virtio_ioregionfd_channel_setup(ioregfd, &local_error)) {
+        error_prepend(&local_error, "Could not setup ioregionfd channel.");
+        error_report_err(local_error);
+        goto fatal;
+    }
+
+    // initialize the rest of the local ioregionfd struct
     ioregfd->opaque = opaque;
     ioregfd->offset = offset;
     ioregfd->size = size;
-    ioregfd->ioc = ioc;
-    ioregfd->ctx = ctx;
 
     // register io channel handler
-    qio_channel_set_aio_fd_handler(ioc, ctx, *handler, NULL, ioregfd);
+    qio_channel_set_aio_fd_handler(ioregfd->ioc, 
+                                   ioregfd->ctx,
+                                   handler,
+                                   NULL,
+                                   ioregfd);
 
     // initialize ioregion kernel struct
     ioregion.guest_paddr = mr->addr + offset;
     ioregion.memory_size = size;
     ioregion.user_data = 0;
-    ioregion.read_fd = kvmfd;
-    ioregion.write_fd = kvmfd;
+    ioregion.read_fd = ioregfd->kvmfd;
+    ioregion.write_fd = ioregfd->kvmfd;
     ioregion.flags = 0;
     memset(&ioregion.pad, 0, sizeof(ioregion.pad));
 
@@ -836,10 +837,6 @@ static void virtio_mmio_pre_plugged(DeviceState *d, Error **errp)
     VirtIOMMIOProxy *proxy = VIRTIO_MMIO(d);
     VirtIODevice *vdev = virtio_bus_get_device(&proxy->bus);
 #ifdef CONFIG_IOREGIONFD
-    int kvmfd;
-    int devfd;
-    QIOChannel *ioc;
-    AioContext *ctx;
     int ret = -1;
 #endif
 
@@ -849,29 +846,15 @@ static void virtio_mmio_pre_plugged(DeviceState *d, Error **errp)
 
 #ifdef CONFIG_IOREGIONFD
     if (vdev->use_ioregionfd) {
-        // virtio_mmio_ioregionfd_prepare_for_dev(proxy);
-        if (virtio_ioregionfd_channel_setup(&ioc,
-                                            &ctx,
-                                            &kvmfd,
-                                            &devfd,
-                                            errp)) {
-            error_prepend(errp, "Could not setup ioregionfd channel.");
+        ret = virtio_ioregionfd_init(&proxy->ioregfd,
+                                     proxy,
+                                     &proxy->iomem,
+                                     0x0,
+                                     0x50,
+                                     virtio_mmio_ioregionfd_handler);
+        if (ret) {
+            error_prepend(errp, "Could not initialize ioregionfd.");
             error_report_err(*errp);
-        } else {
-            ret = virtio_ioregionfd_init(&proxy->ioregfd,
-                                         kvmfd,
-                                         devfd,
-                                         proxy,
-                                         &proxy->iomem,
-                                         0x0,
-                                         0x50,
-                                         ioc,
-                                         ctx,
-                                         virtio_mmio_ioregionfd_handler);
-            if (ret) {
-                error_prepend(errp, "Could not initialize ioregionfd.");
-                error_report_err(*errp);
-            }
         }
     }
 #endif
