@@ -726,8 +726,6 @@ static void virtio_mmio_ioregionfd_read(void *opaque)
     IORegionFD *ioregfd = opaque;
     Error *local_error = NULL;
 
-    // virtio_mmio_ioregionfd_qio_channel_read(proxy->ioregfd.ioc, opaque,
-    //                                         &local_error);
     virtio_ioregionfd_qio_channel_read(ioregfd,
                                        virtio_mmio_read,
                                        virtio_mmio_write,
