@@ -66,7 +66,7 @@ struct VirtIOMMIOProxy {
     bool legacy;
     uint32_t flags;
     /* IoRegionFd */
-    IORegionFD ioregfd;
+    IORegionFD ioregfd[3];
     /* Guest accessible state needing migration and reset */
     uint32_t host_features_sel;
     uint32_t guest_features_sel;

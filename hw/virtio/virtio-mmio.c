@@ -846,14 +846,36 @@ static void virtio_mmio_pre_plugged(DeviceState *d, Error **errp)
 
 #ifdef CONFIG_IOREGIONFD
     if (vdev->use_ioregionfd) {
-        ret = virtio_ioregionfd_init(&proxy->ioregfd,
+        ret = virtio_ioregionfd_init(&proxy->ioregfd[0],
                                      proxy,
                                      &proxy->iomem,
                                      0x0,
-                                     0x50,
+                                     0x50-0x0,
                                      virtio_mmio_ioregionfd_handler);
         if (ret) {
-            error_prepend(errp, "Could not initialize ioregionfd.");
+            error_prepend(errp, "Could not initialize ioregionfd 0.");
+            error_report_err(*errp);
+        }
+
+        ret = virtio_ioregionfd_init(&proxy->ioregfd[1],
+                                     proxy,
+                                     &proxy->iomem,
+                                     0x60,
+                                     0x70-0x60,
+                                     virtio_mmio_ioregionfd_handler);
+        if (ret) {
+            error_prepend(errp, "Could not initialize ioregionfd 1.");
+            error_report_err(*errp);
+        }
+
+        ret = virtio_ioregionfd_init(&proxy->ioregfd[2],
+                                     proxy,
+                                     &proxy->iomem,
+                                     0x80,
+                                     0x200-0x80,
+                                     virtio_mmio_ioregionfd_handler);
+        if (ret) {
+            error_prepend(errp, "Could not initialize ioregionfd 2.");
             error_report_err(*errp);
         }
     }
