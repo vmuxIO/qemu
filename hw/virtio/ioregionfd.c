@@ -8,32 +8,31 @@
 #include "hw/sysbus.h"
 #include "hw/virtio/virtio-mmio.h"
 #include "hw/pci/pci.h"
+// #include "hw/virtio/virtio-pci.h"
 
 #include "hw/virtio/ioregionfd.h"
 #include "ioregionfd.h"
 
 
-int virtio_qio_channel_ioregionfd_read(QIOChannel *ioc, gpointer opaque,
+int virtio_ioregionfd_qio_channel_read(IORegionFD *ioregfd,
+                                       mr_read_func read_func,
+                                       mr_write_func write_func,
                                        Error **errp)
 {
-    struct VirtIOMMIOProxy *proxy = (struct VirtIOMMIOProxy *)opaque;
     struct ioregionfd_cmd cmd = {};
     struct iovec iov = {
         .iov_base = &cmd,
         .iov_len = sizeof(struct ioregionfd_cmd),
     };
     struct ioregionfd_resp resp = {};
-    // variant 1
-    // hwaddr addr;
-    // AddressSpace *as;
     uint64_t val = UINT64_MAX;
     Error *local_err = NULL;
     int ret = -EINVAL;
 
-    if (!ioc) {
+    if (!ioregfd->ioc) {
         return -EINVAL;
     }
-    ret = qio_channel_readv_full(ioc, &iov, 1, NULL, 0, &local_err);
+    ret = qio_channel_readv_full(ioregfd->ioc, &iov, 1, NULL, 0, &local_err);
 
     if (ret == QIO_CHANNEL_ERR_BLOCK) {
         return -EINVAL;
@@ -47,45 +46,22 @@ int virtio_qio_channel_ioregionfd_read(QIOChannel *ioc, gpointer opaque,
         return -EINVAL;
     }
 
-    // variant 1
-    // addr = (hwaddr) proxy->iomem.addr + 0x200 - 64 + cmd.offset;
-    // as = &address_space_memory;
-
     switch (cmd.cmd) {
     case IOREGIONFD_CMD_READ:
-        // variant 1
-        // ret = address_space_rw(as, addr, MEMTXATTRS_UNSPECIFIED,
-        //                        (void *)&val, 1 << cmd.size_exponent,
-        //                        false);
-        // if (ret != MEMTX_OK) {
-        //     ret = -EINVAL;
-        //     error_setg(errp, "Bad address %"PRIx64" in mem read", addr);
-        //     val = UINT64_MAX;
-        // }
-
-        // variant 2
-        val = virtio_mmio_read(proxy, cmd.offset, 1 << cmd.size_exponent);
+        val = read_func(ioregfd->opaque, ioregfd->offset + cmd.offset,
+                        1 << cmd.size_exponent);
 
         memset(&resp, 0, sizeof(resp));
         resp.data = val;
-        if (qio_channel_write_all(ioc, (char *)&resp, sizeof(resp),
+        if (qio_channel_write_all(ioregfd->ioc, (char *)&resp, sizeof(resp),
                                   &local_err)) {
             error_propagate(errp, local_err);
             goto fatal;
         }
         break;
     case IOREGIONFD_CMD_WRITE:
-        // variant 1
-        // ret = address_space_rw(as, addr, MEMTXATTRS_UNSPECIFIED,
-        //                        (void *)&cmd.data, 1 << cmd.size_exponent,
-        //                        true);
-        // if (ret != MEMTX_OK) {
-        //     error_setg(errp, "Bad address %"PRIx64" for mem write", addr);
-        //     val = UINT64_MAX;
-        // }
-
-        // variant 2
-        virtio_mmio_write(proxy, cmd.offset, cmd.data, 1 << cmd.size_exponent);
+        write_func(ioregfd->opaque, ioregfd->offset + cmd.offset, cmd.data,
+                   1 << cmd.size_exponent);
         ret = MEMTX_OK;
 
         if (cmd.resp) {
@@ -96,7 +72,7 @@ int virtio_qio_channel_ioregionfd_read(QIOChannel *ioc, gpointer opaque,
             } else {
                 resp.data = cmd.data;
             }
-            if (qio_channel_write_all(ioc, (char *)&resp, sizeof(resp),
+            if (qio_channel_write_all(ioregfd->ioc, (char *)&resp, sizeof(resp),
                                       &local_err)) {
                 error_propagate(errp, local_err);
                 goto fatal;

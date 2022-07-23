@@ -721,12 +721,16 @@ assign_error:
 
 static IOThread *ioregionfd_iot;
 
-static void ioregionfd_read(void *opaque)
+static void virtio_mmio_ioregionfd_read(void *opaque)
 {
-    struct VirtIOMMIOProxy *proxy = opaque;
+    IORegionFD *ioregfd = opaque;
     Error *local_error = NULL;
 
-    virtio_qio_channel_ioregionfd_read(proxy->ioregfd.ioc, opaque,
+    // virtio_mmio_ioregionfd_qio_channel_read(proxy->ioregfd.ioc, opaque,
+    //                                         &local_error);
+    virtio_ioregionfd_qio_channel_read(ioregfd,
+                                       virtio_mmio_read,
+                                       virtio_mmio_write,
                                        &local_error);
 }
 
@@ -772,7 +776,8 @@ static void virtio_mmio_ioregionfd_prepare_for_dev(VirtIOMMIOProxy *proxy)
 
     proxy->ioregfd.ctx = iothread_get_aio_context(ioregionfd_iot);
     qio_channel_set_aio_fd_handler(proxy->ioregfd.ioc, proxy->ioregfd.ctx,
-                                   ioregionfd_read, NULL, proxy);
+                                   virtio_mmio_ioregionfd_read, NULL,
+                                   &proxy->ioregfd);
 
 fatal:
     return;
@@ -808,11 +813,15 @@ static void virtio_mmio_pre_plugged(DeviceState *d, Error **errp)
     if (vdev->use_ioregionfd) {
         virtio_mmio_ioregionfd_prepare_for_dev(proxy);
         if (proxy->ioregfd.kvmfd != -1) {
+            proxy->ioregfd.opaque = (gpointer) proxy;
+            proxy->ioregfd.offset = 0x0;
+            proxy->ioregfd.size = 0x50;
+
             // prepare ioregionfd struct
             // NOTE: Apparently IORegionFD does not work with all registers
             //       but with some like the config area we are using here.
-            ioregion.guest_paddr = proxy->iomem.addr + 0x100;
-            ioregion.memory_size = 0x100;
+            ioregion.guest_paddr = proxy->iomem.addr + proxy->ioregfd.offset;
+            ioregion.memory_size = proxy->ioregfd.size;
             ioregion.user_data = 0;
             ioregion.read_fd = proxy->ioregfd.kvmfd;
             ioregion.write_fd = proxy->ioregfd.kvmfd;
