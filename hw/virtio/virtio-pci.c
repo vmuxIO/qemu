@@ -1600,6 +1600,30 @@ static void virtio_pci_modern_io_region_unmap(VirtIOPCIProxy *proxy,
                                 &region->mr);
 }
 
+/*
+static void virtio_pci_common_ioregionfd_handler(void *opaque)
+{
+    IORegionFD *ioregfd = opaque;
+    Error *local_error = NULL;
+
+    virtio_ioregionfd_qio_channel_read(ioregfd,
+                                       virtio_pci_common_read,
+                                       virtio_pci_common_write,
+                                       &local_error);
+}
+
+static void virtio_pci_config_ioregionfd_handler(void *opaque)
+{
+    IORegionFD *ioregfd = opaque;
+    Error *local_error = NULL;
+
+    virtio_ioregionfd_qio_channel_read(ioregfd,
+                                       virtio_pci_config_read,
+                                       virtio_pci_config_write,
+                                       &local_error);
+}
+*/
+
 static void virtio_pci_pre_plugged(DeviceState *d, Error **errp)
 {
     VirtIOPCIProxy *proxy = VIRTIO_PCI(d);
@@ -1623,6 +1647,9 @@ static void virtio_pci_device_plugged(DeviceState *d, Error **errp)
     uint8_t *config;
     uint32_t size;
     VirtIODevice *vdev = virtio_bus_get_device(&proxy->bus);
+#ifdef CONFIG_IOREGIONFD
+    int ret = -1;
+#endif
 
     /*
      * Virtio capabilities present without
@@ -1765,6 +1792,37 @@ static void virtio_pci_device_plugged(DeviceState *d, Error **errp)
         pci_register_bar(&proxy->pci_dev, proxy->legacy_io_bar_idx,
                          PCI_BASE_ADDRESS_SPACE_IO, &proxy->bar);
     }
+
+#ifdef CONFIG_IOREGIONFD
+    if (vdev->use_ioregionfd) {
+        (void) ret;
+        // if (modern) {
+        //     ret = virtio_ioregionfd_init(&proxy->ioregfd[0],
+        //                                  proxy,
+        //                                  &proxy->common.mr,
+        //                                  0x0,
+        //                                  0x4,
+        //                                  virtio_pci_common_ioregionfd_handler);
+        //     if (ret) {
+        //         error_prepend(errp, "Could not initialize ioregionfd 0.");
+        //         error_report_err(*errp);
+        //     }
+        // }
+
+        // if (legacy) {
+        //     ret = virtio_ioregionfd_init(&proxy->ioregfd[1],
+        //                                  proxy,
+        //                                  &proxy->bar,
+        //                                  0x0,
+        //                                  0x4,
+        //                                  virtio_pci_config_ioregionfd_handler);
+        //     if (ret) {
+        //         error_prepend(errp, "Could not initialize ioregionfd 0.");
+        //         error_report_err(*errp);
+        //     }
+        // }
+    }
+#endif
 }
 
 static void virtio_pci_device_unplugged(DeviceState *d)

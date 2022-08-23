@@ -19,6 +19,9 @@
 #include "hw/virtio/virtio-bus.h"
 #include "qom/object.h"
 
+#include "ioregionfd.h"
+#include "hw/virtio/ioregionfd.h"
+
 
 /* virtio-pci-bus */
 
@@ -124,6 +127,8 @@ typedef struct VirtIOPCIQueue {
 
 struct VirtIOPCIProxy {
     PCIDevice pci_dev;
+
+    /* Memory Regions */
     MemoryRegion bar;
     union {
         struct {
@@ -137,6 +142,10 @@ struct VirtIOPCIProxy {
     };
     MemoryRegion modern_bar;
     MemoryRegion io_bar;
+
+    /* IoRegionFd */
+    IORegionFD ioregfd[2];
+
     uint32_t legacy_io_bar_idx;
     uint32_t msix_bar_idx;
     uint32_t modern_io_bar_idx;
