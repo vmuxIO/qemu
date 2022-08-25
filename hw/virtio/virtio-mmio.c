@@ -49,6 +49,7 @@
 
 static bool virtio_mmio_ioeventfd_enabled(DeviceState *d)
 {
+    return false;
     VirtIOMMIOProxy *proxy = VIRTIO_MMIO(d);
 
     return (proxy->flags & VIRTIO_IOMMIO_FLAG_USE_IOEVENTFD) != 0;
@@ -58,6 +59,7 @@ static int virtio_mmio_ioeventfd_assign(DeviceState *d,
                                         EventNotifier *notifier,
                                         int n, bool assign)
 {
+    return 0;
     VirtIOMMIOProxy *proxy = VIRTIO_MMIO(d);
 
     if (assign) {
