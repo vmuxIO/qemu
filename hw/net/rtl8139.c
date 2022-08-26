@@ -63,6 +63,7 @@
 #include "net/eth.h"
 #include "sysemu/sysemu.h"
 #include "qom/object.h"
+#include "qapi/error.h"
 #include "hw/virtio/ioregionfd.h"
 
 /* debug RTL8139 card */
@@ -3369,11 +3370,25 @@ static NetClientInfo net_rtl8139_info = {
     .link_status_changed = rtl8139_set_link_status,
 };
 
+static void rtl8139_ioport_ioregionfd_handler(void *opaque)
+{
+    IORegionFD *ioregfd = opaque;
+    Error *local_error = NULL;
+
+    virtio_ioregionfd_qio_channel_read(ioregfd,
+                                       rtl8139_ioport_read,
+                                       rtl8139_ioport_write,
+                                       &local_error);
+}
+
 static void pci_rtl8139_realize(PCIDevice *dev, Error **errp)
 {
     RTL8139State *s = RTL8139(dev);
     DeviceState *d = DEVICE(dev);
     uint8_t *pci_conf;
+#ifdef CONFIG_IOREGIONFD
+    int ret = -1;
+#endif
 
     pci_conf = dev->config;
     pci_conf[PCI_INTERRUPT_PIN] = 1;    /* interrupt pin A */
@@ -3390,6 +3405,22 @@ static void pci_rtl8139_realize(PCIDevice *dev, Error **errp)
     pci_register_bar(dev, 1, PCI_BASE_ADDRESS_SPACE_MEMORY, &s->bar_mem);
 
     qemu_macaddr_default_if_unset(&s->conf.macaddr);
+
+    /* ioregionfd */
+#ifdef CONFIG_IOREGIONFD
+    if (s->use_ioregionfd) {
+        ret = virtio_ioregionfd_init(&s->ioregfd[0],
+                                     s,
+                                     &s->bar_io,
+                                     0x0,
+                                     0x100,
+                                     rtl8139_ioport_ioregionfd_handler);
+        if (ret) {
+            error_prepend(errp, "Could not initialize ioregionfd 0.");
+            error_report_err(*errp);
+        }
+    }
+#endif
 
     /* prepare eeprom */
     s->eeprom.contents[0] = 0x8129;
