@@ -63,6 +63,7 @@
 #include "net/eth.h"
 #include "sysemu/sysemu.h"
 #include "qom/object.h"
+#include "hw/virtio/ioregionfd.h"
 
 /* debug RTL8139 card */
 //#define DEBUG_RTL8139 1
@@ -516,6 +517,7 @@ struct RTL8139State {
 
     /* IORegionFD */
     bool use_ioregionfd;
+    IORegionFD ioregfd[1];
 };
 
 /* Writes tally counters to memory via DMA */
