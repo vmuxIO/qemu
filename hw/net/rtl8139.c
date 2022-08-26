@@ -513,6 +513,9 @@ struct RTL8139State {
 
     /* Support migration to/from old versions */
     int rtl8139_mmio_io_addr_dummy;
+
+    /* IORegionFD */
+    bool use_ioregionfd;
 };
 
 /* Writes tally counters to memory via DMA */
@@ -3419,6 +3422,7 @@ static void rtl8139_instance_init(Object *obj)
 
 static Property rtl8139_properties[] = {
     DEFINE_NIC_PROPERTIES(RTL8139State, conf),
+    DEFINE_PROP_BOOL("use-ioregionfd", RTL8139State, use_ioregionfd, false),
     DEFINE_PROP_END_OF_LIST(),
 };
 
