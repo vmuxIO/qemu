@@ -146,6 +146,7 @@ int virtio_ioregionfd_init(IORegionFD *ioregfd,
                            MemoryRegion *mr,
                            uint64_t offset,
                            uint32_t size,
+                           bool posted_writes,
                            ioregionfd_handler handler)
 {
     struct kvm_ioregion ioregion;
@@ -165,7 +166,7 @@ int virtio_ioregionfd_init(IORegionFD *ioregfd,
     ioregfd->size = size;
 
     // register io channel handler
-    qio_channel_set_aio_fd_handler(ioregfd->ioc, 
+    qio_channel_set_aio_fd_handler(ioregfd->ioc,
                                    ioregfd->ctx,
                                    handler,
                                    NULL,
@@ -177,7 +178,7 @@ int virtio_ioregionfd_init(IORegionFD *ioregfd,
     ioregion.user_data = 0;
     ioregion.read_fd = ioregfd->kvmfd;
     ioregion.write_fd = ioregfd->kvmfd;
-    ioregion.flags = 0;
+    ioregion.flags = posted_writes ? KVM_IOREGION_POSTED_WRITES : 0;
     memset(&ioregion.pad, 0, sizeof(ioregion.pad));
 
     // register ioregion with kvm

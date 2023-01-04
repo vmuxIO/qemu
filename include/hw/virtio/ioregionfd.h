@@ -44,6 +44,7 @@ int virtio_ioregionfd_init(IORegionFD *ioregfd,
                            MemoryRegion *mr,
                            uint64_t offset,
                            uint32_t size,
+                           bool posted_writes,
                            ioregionfd_handler handler);
 
 #endif /* ifndef IOREGIONFD_H */

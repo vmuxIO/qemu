@@ -749,6 +749,7 @@ static void virtio_mmio_pre_plugged(DeviceState *d, Error **errp)
                                      &proxy->iomem,
                                      0x0,
                                      0x50-0x0,
+                                     false,
                                      virtio_mmio_ioregionfd_handler);
         if (ret) {
             error_prepend(errp, "Could not initialize ioregionfd 0.");
@@ -760,6 +761,7 @@ static void virtio_mmio_pre_plugged(DeviceState *d, Error **errp)
                                      &proxy->iomem,
                                      0x60,
                                      0x70-0x60,
+                                     false,
                                      virtio_mmio_ioregionfd_handler);
         if (ret) {
             error_prepend(errp, "Could not initialize ioregionfd 1.");
@@ -771,6 +773,7 @@ static void virtio_mmio_pre_plugged(DeviceState *d, Error **errp)
                                      &proxy->iomem,
                                      0x80,
                                      0x200-0x80,
+                                     false,
                                      virtio_mmio_ioregionfd_handler);
         if (ret) {
             error_prepend(errp, "Could not initialize ioregionfd 2.");
