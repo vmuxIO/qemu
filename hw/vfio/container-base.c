@@ -26,10 +26,10 @@ int vfio_container_dma_map(VFIOContainerBase *bcontainer,
 
 int vfio_container_dma_unmap(VFIOContainerBase *bcontainer,
                              hwaddr iova, ram_addr_t size,
-                             IOMMUTLBEntry *iotlb)
+                             IOMMUTLBEntry *iotlb, int flags)
 {
     g_assert(bcontainer->ops->dma_unmap);
-    return bcontainer->ops->dma_unmap(bcontainer, iova, size, iotlb);
+    return bcontainer->ops->dma_unmap(bcontainer, iova, size, iotlb, flags);
 }
 
 bool vfio_container_add_section_window(VFIOContainerBase *bcontainer,
