@@ -223,6 +223,8 @@ void vfio_region_exit(VFIORegion *region);
 void vfio_region_finalize(VFIORegion *region);
 void vfio_reset_handler(void *opaque);
 struct vfio_device_info *vfio_get_device_info(int fd);
+void vfio_prepare_device(VFIODevice *vbasedev, VFIOContainerBase *bcontainer,
+                         VFIOGroup *group, struct vfio_device_info *info);
 bool vfio_attach_device(char *name, VFIODevice *vbasedev,
                         AddressSpace *as, Error **errp);
 bool vfio_attach_device_by_iommu_type(const char *iommu_type, char *name,
